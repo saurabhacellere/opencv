@@ -229,7 +229,7 @@ void ExifReader::parseExif()
 
     uint32_t offset = getStartOffset();
 
-    size_t numEntry = getNumDirEntry( offset );
+    size_t numEntry = getNumDirEntry();
 
     offset += 2; //go to start of tag fields
 
@@ -303,7 +303,7 @@ uint32_t ExifReader::getStartOffset() const
  *
  * @return The number of directory entries
  */
-size_t ExifReader::getNumDirEntry(const size_t offsetNumDir) const
+size_t ExifReader::getNumDirEntry() const
 {
     return getU16( offsetNumDir );
 }
@@ -335,6 +335,9 @@ ExifEntry_t ExifReader::parseExifEntry(const size_t offset)
 
     switch( tagNum )
     {
+        case DOCUMENT_NAME:
+            entry.field_str = getString( offset );
+            break;
         case IMAGE_DESCRIPTION:
             entry.field_str = getString( offset );
             break;

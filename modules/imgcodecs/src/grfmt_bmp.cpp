@@ -76,8 +76,17 @@ ImageDecoder BmpDecoder::newDecoder() const
     return makePtr<BmpDecoder>();
 }
 
-bool  BmpDecoder::readHeader()
+static void setRes(int resx, int resy, std::map<String, String> *properties) {
+    if(!properties) return;
+    std::map<String, String> &p = *properties;
+    p[BaseImageDecoder::dpi_x] = BaseImageDecoder::toString(resx * 2.54 / 100);
+    p[BaseImageDecoder::dpi_y] = BaseImageDecoder::toString(resy * 2.54 / 100);
+}
+
+bool  BmpDecoder::readHeader(std::map<String, String> *properties)
 {
+    if(properties) properties->clear();
+
     bool result = false;
     bool iscolor = false;
 
@@ -103,10 +112,13 @@ bool  BmpDecoder::readHeader()
             m_height = m_strm.getDWord();
             m_bpp    = m_strm.getDWord() >> 16;
             m_rle_code = (BmpCompression)m_strm.getDWord();
-            m_strm.skip(12);
+            m_strm.skip(4); // image size
+            int resx = m_strm.getDWord();
+            int resy = m_strm.getDWord();
             int clrused = m_strm.getDWord();
             m_strm.skip( size - 36 );
 
+            setRes(resx, resy, properties);
             if( m_width > 0 && m_height != 0 &&
              (((m_bpp == 1 || m_bpp == 4 || m_bpp == 8 ||
                 m_bpp == 24 || m_bpp == 32 ) && m_rle_code == BMP_RGB) ||
@@ -192,7 +204,7 @@ bool  BmpDecoder::readHeader()
 }
 
 
-bool  BmpDecoder::readData( Mat& img )
+bool  BmpDecoder::readData( Mat& img, std::map<String, String>* /*properties*/ )
 {
     uchar* data = img.ptr();
     int step = validateToInt(img.step);
@@ -520,7 +532,12 @@ ImageEncoder BmpEncoder::newEncoder() const
     return makePtr<BmpEncoder>();
 }
 
-bool  BmpEncoder::write( const Mat& img, const std::vector<int>& )
+static int dpi2m(int dpi)
+{
+    return (int)floor(MAX(0, dpi) *  100. / 2.54 + .5);
+}
+
+bool  BmpEncoder::write( const Mat& img, const std::vector<int> &params)
 {
     int width = img.cols, height = img.rows, channels = img.channels();
     int fileStep = (width*channels + 3) & -4;
@@ -534,6 +551,10 @@ bool  BmpEncoder::write( const Mat& img, const std::vector<int>& )
     }
     else if( !strm.open( m_filename ))
         return false;
+
+    int dpix = 0, dpiy = 0;
+    readParam(params, IMWRITE_DPIX, dpix);
+    readParam(params, IMWRITE_DPIY, dpiy);
 
     int  bitmapHeaderSize = 40;
     int  paletteSize = channels > 1 ? 0 : 1024;
@@ -560,8 +581,8 @@ bool  BmpEncoder::write( const Mat& img, const std::vector<int>& )
     strm.putWord( channels << 3 );
     strm.putDWord( BMP_RGB );
     strm.putDWord( 0 );
-    strm.putDWord( 0 );
-    strm.putDWord( 0 );
+    strm.putDWord( dpi2m(dpix) );
+    strm.putDWord( dpi2m(dpiy) );
     strm.putDWord( 0 );
     strm.putDWord( 0 );
 

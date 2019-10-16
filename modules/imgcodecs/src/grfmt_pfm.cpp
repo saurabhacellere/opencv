@@ -47,7 +47,7 @@ template<> double atoT<double>(const std::string& s) { return std::atof(s.c_str(
 template<typename T>
 T read_number(cv::RLByteStream& strm)
 {
-  // should be enough to take string representation of any number
+  // should be enogh to take string representation of any number
   const size_t buffer_size = 2048;
 
   std::vector<char> buffer(buffer_size, 0);
@@ -84,8 +84,9 @@ PFMDecoder::PFMDecoder() : m_scale_factor(0), m_swap_byte_order(false)
   m_strm.close();
 }
 
-bool PFMDecoder::readHeader()
+bool PFMDecoder::readHeader(std::map<String, String> *properties)
 {
+  if(properties) properties->clear();
   if (m_buf.empty()) {
     if (!m_strm.open(m_filename)) {
       return false;
@@ -124,7 +125,7 @@ bool PFMDecoder::readHeader()
   return true;
 }
 
-bool PFMDecoder::readData(Mat& mat)
+bool PFMDecoder::readData(Mat& mat, std::map<String, String>* /*properties*/)
 {
   if (!m_strm.isOpened()) {
     CV_Error(Error::StsError, "Unexpected status in data stream");

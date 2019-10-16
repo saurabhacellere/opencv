@@ -329,13 +329,11 @@ TEST_P(Test_Darknet_nets, TinyYoloVoc)
 }
 
 #ifdef HAVE_INF_ENGINE
-static const std::chrono::milliseconds async_timeout(10000);
+static const std::chrono::milliseconds async_timeout(500);
 
 typedef testing::TestWithParam<tuple<std::string, Target> > Test_Darknet_nets_async;
 TEST_P(Test_Darknet_nets_async, Accuracy)
 {
-    if (INF_ENGINE_VER_MAJOR_LT(2019020000))
-        applyTestTag(CV_TEST_TAG_DNN_SKIP_IE);
     applyTestTag(CV_TEST_TAG_MEMORY_512MB);
 
     std::string prefix = get<0>(GetParam());
@@ -355,11 +353,14 @@ TEST_P(Test_Darknet_nets_async, Accuracy)
     netSync.setPreferableTarget(target);
 
     // Run synchronously.
-    std::vector<Mat> refs(numInputs);
+    std::vector<std::vector<Mat> > refs(numInputs);
+    std::vector<String> outsNames = netSync.getUnconnectedOutLayersNames();
     for (int i = 0; i < numInputs; ++i)
     {
         netSync.setInput(inputs[i]);
-        refs[i] = netSync.forward().clone();
+        netSync.forward(refs[i], outsNames);
+        for (int j = 0; j < refs[i].size(); ++j)
+            refs[i][j] = refs[i][j].clone();
     }
 
     Net netAsync = readNet(findDataFile("dnn/" + prefix + ".cfg"),
@@ -371,11 +372,12 @@ TEST_P(Test_Darknet_nets_async, Accuracy)
     {
         netAsync.setInput(inputs[i]);
 
-        AsyncArray out = netAsync.forwardAsync();
+        AsyncArray out = netAsync.forwardAsync(outsNames);
         ASSERT_TRUE(out.valid());
-        Mat result;
-        EXPECT_TRUE(out.get(result, async_timeout));
-        normAssert(refs[i], result, format("Index: %d", i).c_str(), 0, 0);
+        std::vector<Mat> results;
+        EXPECT_TRUE(out.get(results, async_timeout));
+        for (int j = 0; j < refs[i].size(); ++j)
+            normAssert(refs[i][j], results[j], format("Index: %d(%d)", i, j).c_str(), 0, 0);
     }
 }
 

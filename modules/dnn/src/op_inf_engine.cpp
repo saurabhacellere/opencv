@@ -286,6 +286,7 @@ void InfEngineBackendNet::init(int targetId)
             outLayer.setPort(InferenceEngine::Port({}, p));
 #endif
             netBuilder.addLayer({InferenceEngine::PortInfo(id)}, outLayer);
+            outsNames.push_back(netBuilder.getLayer(id)->getName());
         }
         netBuilder.getContext().addShapeInferImpl(kOpenCVLayersType,
                             std::make_shared<InfEngineCustomLayerShapeInfer>());
@@ -314,6 +315,7 @@ void InfEngineBackendNet::init(int targetId)
     for (const auto& name : requestedOutputs)
     {
         cnn.addOutput(name);
+        outsNames.push_back(name);
     }
 
     for (const auto& it : cnn.getInputsInfo())
@@ -498,7 +500,6 @@ void InfEngineBackendWrapper::setHostDirty()
 
 }
 
-
 #if INF_ENGINE_VER_MAJOR_LE(INF_ENGINE_RELEASE_2019R1)
 static std::map<std::string, InferenceEngine::InferenceEnginePluginPtr>& getSharedPlugins()
 {
@@ -582,6 +583,7 @@ void InfEngineBackendNet::initPlugin(InferenceEngine::CNNNetwork& net)
     try
     {
         AutoLock lock(getInitializationMutex());
+        InferenceEngine::Core& ie = getCore();
 #if INF_ENGINE_VER_MAJOR_LE(INF_ENGINE_RELEASE_2019R1)
         auto& sharedPlugins = getSharedPlugins();
         auto pluginIt = sharedPlugins.find(device_name);
@@ -590,8 +592,6 @@ void InfEngineBackendNet::initPlugin(InferenceEngine::CNNNetwork& net)
             enginePtr = pluginIt->second;
         }
         else
-#else
-        InferenceEngine::Core& ie = getCore();
 #endif
         {
 #if INF_ENGINE_VER_MAJOR_LE(INF_ENGINE_RELEASE_2019R1)
@@ -725,16 +725,15 @@ void InfEngineBackendNet::addBlobs(const std::vector<cv::Ptr<BackendWrapper> >& 
     }
 }
 
-void InfEngineBackendNet::InfEngineReqWrapper::makePromises(const std::vector<Ptr<BackendWrapper> >& outsWrappers)
+void InfEngineBackendNet::InfEngineReqWrapper::makePromises(const std::vector<Ptr<BackendWrapper> >& outsWrappers,
+                                                            const std::vector<std::string>& outsNames_)
 {
     auto outs = infEngineWrappers(outsWrappers);
-    outProms.clear();
-    outProms.resize(outs.size());
-    outsNames.resize(outs.size());
+    outProm = cv::AsyncPromise();
+    outsNames = outsNames_;
     for (int i = 0; i < outs.size(); ++i)
     {
-        outs[i]->futureMat = outProms[i].getArrayResult();
-        outsNames[i] = outs[i]->dataPtr->getName();
+        outs[i]->futureMat = outProm.getArrayResult();
     }
 }
 
@@ -792,39 +791,36 @@ void InfEngineBackendNet::forward(const std::vector<Ptr<BackendWrapper> >& outBl
                 request->GetUserData((void**)&wrapper, 0);
                 CV_Assert(wrapper && "Internal error");
 
-                size_t processedOutputs = 0;
                 try
                 {
-                    for (; processedOutputs < wrapper->outProms.size(); ++processedOutputs)
+                    std::vector<Mat> outs;
+                    outs.reserve(wrapper->outsNames.size());
+                    for (const auto& name : wrapper->outsNames)
                     {
-                        const std::string& name = wrapper->outsNames[processedOutputs];
-                        Mat m = infEngineBlobToMat(wrapper->req.GetBlob(name));
+                        outs.push_back(infEngineBlobToMat(wrapper->req.GetBlob(name)));
+                    }
 
-                        try
-                        {
-                            CV_Assert(status == InferenceEngine::StatusCode::OK);
-                            wrapper->outProms[processedOutputs].setValue(m.clone());
-                        }
-                        catch (...)
-                        {
-                            try {
-                                wrapper->outProms[processedOutputs].setException(std::current_exception());
-                            } catch(...) {
-                                CV_LOG_ERROR(NULL, "DNN: Exception occurred during async inference exception propagation");
-                            }
+                    try
+                    {
+                        CV_Assert(status == InferenceEngine::StatusCode::OK);
+                        wrapper->outProm.setValue(outs);
+                    }
+                    catch (...)
+                    {
+                        try {
+                            wrapper->outProm.setException(std::current_exception());
+                        } catch(...) {
+                            CV_LOG_ERROR(NULL, "DNN: Exception occurred during async inference exception propagation");
                         }
                     }
                 }
                 catch (...)
                 {
                     std::exception_ptr e = std::current_exception();
-                    for (; processedOutputs < wrapper->outProms.size(); ++processedOutputs)
-                    {
-                        try {
-                            wrapper->outProms[processedOutputs].setException(e);
-                        } catch(...) {
-                            CV_LOG_ERROR(NULL, "DNN: Exception occurred during async inference exception propagation");
-                        }
+                    try {
+                        wrapper->outProm.setException(e);
+                    } catch(...) {
+                        CV_LOG_ERROR(NULL, "DNN: Exception occurred during async inference exception propagation");
                     }
                 }
                 wrapper->isReady = true;
@@ -844,7 +840,7 @@ void InfEngineBackendNet::forward(const std::vector<Ptr<BackendWrapper> >& outBl
         }
 
         // Set promises to output blobs wrappers.
-        reqWrapper->makePromises(outBlobsWrappers);
+        reqWrapper->makePromises(outBlobsWrappers, outsNames);
 
         reqWrapper->isReady = false;
         reqWrapper->req.StartAsync();
@@ -969,7 +965,7 @@ void forwardInfEngine(const std::vector<Ptr<BackendWrapper> >& outBlobsWrappers,
 #endif  // HAVE_INF_ENGINE
 }
 
-CV__DNN_INLINE_NS_BEGIN
+CV__DNN_EXPERIMENTAL_NS_BEGIN
 
 void resetMyriadDevice()
 {
@@ -1035,5 +1031,5 @@ cv::String getInferenceEngineVPUType()
 #endif  // HAVE_INF_ENGINE
 
 
-CV__DNN_INLINE_NS_END
+CV__DNN_EXPERIMENTAL_NS_END
 }}  // namespace dnn, namespace cv

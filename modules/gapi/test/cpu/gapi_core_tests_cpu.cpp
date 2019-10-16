@@ -251,10 +251,7 @@ INSTANTIATE_TEST_CASE_P(ThresholdTestCPU, ThresholdTest,
                                 Values(-1),
                                 Values(CORE_CPU),
                                 Values(cv::THRESH_BINARY, cv::THRESH_BINARY_INV, cv::THRESH_TRUNC,
-                                       cv::THRESH_TOZERO, cv::THRESH_TOZERO_INV),
-                                Values(cv::Scalar(0, 0, 0, 0),
-                                       cv::Scalar(100, 100, 100, 100),
-                                       cv::Scalar(255, 255, 255, 255))));
+                                    cv::THRESH_TOZERO, cv::THRESH_TOZERO_INV)));
 
 INSTANTIATE_TEST_CASE_P(ThresholdTestCPU, ThresholdOTTest,
                         Combine(Values(CV_8UC1),
@@ -368,14 +365,6 @@ INSTANTIATE_TEST_CASE_P(CropTestCPU, CropTest,
                                 Values(CORE_CPU),
                                 Values(cv::Rect(10, 8, 20, 35), cv::Rect(4, 10, 37, 50))));
 
-INSTANTIATE_TEST_CASE_P(CopyTestCPU, CopyTest,
-                        Combine(Values( CV_8UC1, CV_8UC3, CV_16UC1, CV_16SC1, CV_32FC1 ),
-                                Values(cv::Size(1280, 720),
-                                       cv::Size(640, 480),
-                                       cv::Size(128, 128)),
-                                Values(-1),
-                                Values(CORE_CPU)));
-
 INSTANTIATE_TEST_CASE_P(LUTTestCPU, LUTTest,
                         Combine(Values(CV_8UC1, CV_8UC3),
                                 Values(cv::Size(1280, 720),
@@ -453,18 +442,4 @@ INSTANTIATE_TEST_CASE_P(BackendOutputAllocationTestCPU, BackendOutputAllocationT
                                 Values(-1),
                                 Values(CORE_CPU)));
 
-INSTANTIATE_TEST_CASE_P(BackendOutputAllocationLargeSizeWithCorrectSubmatrixTestCPU,
-                        BackendOutputAllocationLargeSizeWithCorrectSubmatrixTest,
-                        Combine(Values(CV_8UC3, CV_16SC2, CV_32FC1),
-                                Values(cv::Size(50, 50)),
-                                Values(-1),
-                                Values(CORE_CPU)));
-
-INSTANTIATE_TEST_CASE_P(ReInitOutTestCPU, ReInitOutTest,
-                        Combine(Values(CV_8UC3, CV_16SC4, CV_32FC1),
-                                Values(cv::Size(640, 480)),
-                                Values(-1),
-                                Values(CORE_CPU),
-                                Values(cv::Size(640, 400),
-                                       cv::Size(10, 480))));
 }

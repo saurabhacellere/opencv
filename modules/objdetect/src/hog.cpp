@@ -64,9 +64,10 @@ namespace cv
 
 #define NTHREADS 256
 
+enum {DESCR_FORMAT_COL_BY_COL, DESCR_FORMAT_ROW_BY_ROW};
+
 static int numPartsWithin(int size, int part_size, int stride)
 {
-    CV_Assert(stride != 0);
     return (size - part_size + stride) / stride;
 }
 
@@ -79,17 +80,13 @@ static Size numPartsWithin(cv::Size size, cv::Size part_size,
 
 static size_t getBlockHistogramSize(Size block_size, Size cell_size, int nbins)
 {
-    CV_Assert(!cell_size.empty());
     Size cells_per_block = Size(block_size.width / cell_size.width,
-                                block_size.height / cell_size.height);
+        block_size.height / cell_size.height);
     return (size_t)(nbins * cells_per_block.area());
 }
 
 size_t HOGDescriptor::getDescriptorSize() const
 {
-    CV_Assert(!cellSize.empty());
-    CV_Assert(!blockStride.empty());
-
     CV_Assert(blockSize.width % cellSize.width == 0 &&
         blockSize.height % cellSize.height == 0);
     CV_Assert((winSize.width - blockSize.width) % blockStride.width == 0 &&
@@ -147,20 +144,20 @@ bool HOGDescriptor::read(FileNode& obj)
     if( !obj.isMap() )
         return false;
     FileNodeIterator it = obj["winSize"].begin();
-    it >> winSize.width >> winSize.height; CV_Assert(!winSize.empty());
+    it >> winSize.width >> winSize.height;
     it = obj["blockSize"].begin();
-    it >> blockSize.width >> blockSize.height; CV_Assert(!blockSize.empty());
+    it >> blockSize.width >> blockSize.height;
     it = obj["blockStride"].begin();
-    it >> blockStride.width >> blockStride.height; CV_Assert(!blockStride.empty());
+    it >> blockStride.width >> blockStride.height;
     it = obj["cellSize"].begin();
-    it >> cellSize.width >> cellSize.height; CV_Assert(!cellSize.empty());
-    obj["nbins"] >> nbins; CV_Assert(nbins > 0);
+    it >> cellSize.width >> cellSize.height;
+    obj["nbins"] >> nbins;
     obj["derivAperture"] >> derivAperture;
     obj["winSigma"] >> winSigma;
     obj["histogramNormType"] >> histogramNormType;
     obj["L2HysThreshold"] >> L2HysThreshold;
     obj["gammaCorrection"] >> gammaCorrection;
-    obj["nlevels"] >> nlevels; CV_Assert(nlevels > 0);
+    obj["nlevels"] >> nlevels;
     if (obj["signedGradient"].empty())
         signedGradient = false;
     else
@@ -229,21 +226,17 @@ void HOGDescriptor::copyTo(HOGDescriptor& c) const
     c.signedGradient = signedGradient;
 }
 
-void HOGDescriptor::computeGradient(InputArray _img, InputOutputArray _grad, InputOutputArray _qangle,
+void HOGDescriptor::computeGradient(const Mat& img, Mat& grad, Mat& qangle,
     Size paddingTL, Size paddingBR) const
 {
     CV_INSTRUMENT_REGION();
 
-    Mat img = _img.getMat();
-    CV_Assert(!img.empty());
     CV_Assert( img.type() == CV_8U || img.type() == CV_8UC3 );
 
     Size gradsize(img.cols + paddingTL.width + paddingBR.width,
         img.rows + paddingTL.height + paddingBR.height);
-    _grad.create(gradsize, CV_32FC2);  // <magnitude*(1-alpha), magnitude*alpha>
-    _qangle.create(gradsize, CV_8UC2); // [0..nbins-1] - quantized gradient orientation
-    Mat grad = _grad.getMat();
-    Mat qangle = _qangle.getMat();
+    grad.create(gradsize, CV_32FC2);  // <magnitude*(1-alpha), magnitude*alpha>
+    qangle.create(gradsize, CV_8UC2); // [0..nbins-1] - quantized gradient orientation
 
     Size wholeSize;
     Point roiofs;
@@ -301,6 +294,11 @@ void HOGDescriptor::computeGradient(InputArray _img, InputOutputArray _grad, Inp
     Mat Dy(1, width, CV_32F, dbuf + width);
     Mat Mag(1, width, CV_32F, dbuf + width*2);
     Mat Angle(1, width, CV_32F, dbuf + width*3);
+#if CV_SIMD128
+    int widthP2 = width+2;
+    AutoBuffer<float> _lutBuf(9*widthP2);
+    float* const lutBuf = _lutBuf.data();
+#endif
 
     if (cn == 3)
     {
@@ -344,43 +342,171 @@ void HOGDescriptor::computeGradient(InputArray _img, InputOutputArray _grad, Inp
         {
             x = 0;
 #if CV_SIMD128
-            for( ; x <= width - 4; x += 4 )
+            typedef const uchar* const T;
+            float *lutPrev, *lutCurr, *lutNext;
+            if (y == 0)
             {
-                int x0 = xmap[x], x1 = xmap[x+1], x2 = xmap[x+2], x3 = xmap[x+3];
-                typedef const uchar* const T;
-                T p02 = imgPtr + xmap[x+1], p00 = imgPtr + xmap[x-1];
-                T p12 = imgPtr + xmap[x+2], p10 = imgPtr + xmap[x];
-                T p22 = imgPtr + xmap[x+3], p20 = p02;
-                T p32 = imgPtr + xmap[x+4], p30 = p12;
+                lutPrev = lutBuf+widthP2*0;
+                lutCurr = lutBuf+widthP2*3;
+                lutNext = lutBuf+widthP2*6;
 
-                v_float32x4 _dx0 = v_float32x4(lut[p02[0]], lut[p12[0]], lut[p22[0]], lut[p32[0]]) -
-                                   v_float32x4(lut[p00[0]], lut[p10[0]], lut[p20[0]], lut[p30[0]]);
-                v_float32x4 _dx1 = v_float32x4(lut[p02[1]], lut[p12[1]], lut[p22[1]], lut[p32[1]]) -
-                                   v_float32x4(lut[p00[1]], lut[p10[1]], lut[p20[1]], lut[p30[1]]);
-                v_float32x4 _dx2 = v_float32x4(lut[p02[2]], lut[p12[2]], lut[p22[2]], lut[p32[2]]) -
-                                   v_float32x4(lut[p00[2]], lut[p10[2]], lut[p20[2]], lut[p30[2]]);
+                {
+                    int x0 = xmap[-1], x1 = xmap[0];
+                    T p02 = imgPtr + x0, p12 = imgPtr + x1;
 
-                v_float32x4 _dy0 = v_float32x4(lut[nextPtr[x0]], lut[nextPtr[x1]], lut[nextPtr[x2]], lut[nextPtr[x3]]) -
-                                   v_float32x4(lut[prevPtr[x0]], lut[prevPtr[x1]], lut[prevPtr[x2]], lut[prevPtr[x3]]);
-                v_float32x4 _dy1 = v_float32x4(lut[nextPtr[x0+1]], lut[nextPtr[x1+1]], lut[nextPtr[x2+1]], lut[nextPtr[x3+1]]) -
-                                   v_float32x4(lut[prevPtr[x0+1]], lut[prevPtr[x1+1]], lut[prevPtr[x2+1]], lut[prevPtr[x3+1]]);
-                v_float32x4 _dy2 = v_float32x4(lut[nextPtr[x0+2]], lut[nextPtr[x1+2]], lut[nextPtr[x2+2]], lut[nextPtr[x3+2]]) -
-                                   v_float32x4(lut[prevPtr[x0+2]], lut[prevPtr[x1+2]], lut[prevPtr[x2+2]], lut[prevPtr[x3+2]]);
+                    lutPrev[0+widthP2*0] = lut[prevPtr[x0+0]];
+                    lutPrev[0+widthP2*1] = lut[prevPtr[x0+1]];
+                    lutPrev[0+widthP2*2] = lut[prevPtr[x0+2]];
+                    lutCurr[0+widthP2*0] = lut[p02[0]]; lutCurr[1+widthP2*0] = lut[p12[0]];
+                    lutCurr[0+widthP2*1] = lut[p02[1]]; lutCurr[1+widthP2*1] = lut[p12[1]];
+                    lutCurr[0+widthP2*2] = lut[p02[2]]; lutCurr[1+widthP2*2] = lut[p12[2]];
+                    lutNext[0+widthP2*0] = lut[nextPtr[x0+0]];
+                    lutNext[0+widthP2*1] = lut[nextPtr[x0+1]];
+                    lutNext[0+widthP2*2] = lut[nextPtr[x0+2]];
+                }
+                for( ; x <= width - 4; x += 4 )
+                {
+                    int x0 = xmap[x], x1 = xmap[x+1], x2 = xmap[x+2], x3 = xmap[x+3];
+                    T p02 = imgPtr + xmap[x+1];
+                    T p12 = imgPtr + xmap[x+2];
+                    T p22 = imgPtr + xmap[x+3];
+                    T p32 = imgPtr + xmap[x+4];
 
-                v_float32x4 _mag0 = (_dx0 * _dx0) + (_dy0 * _dy0);
-                v_float32x4 _mag1 = (_dx1 * _dx1) + (_dy1 * _dy1);
-                v_float32x4 _mag2 = (_dx2 * _dx2) + (_dy2 * _dy2);
+                    v_float32x4 _dx00 = v_float32x4(lut[p02[0]], lut[p12[0]], lut[p22[0]], lut[p32[0]]);
+                    v_float32x4 _dx10 = v_float32x4(lut[p02[1]], lut[p12[1]], lut[p22[1]], lut[p32[1]]);
+                    v_float32x4 _dx20 = v_float32x4(lut[p02[2]], lut[p12[2]], lut[p22[2]], lut[p32[2]]);
 
-                v_float32x4 mask = v_reinterpret_as_f32(_mag2 > _mag1);
-                _dx2 = v_select(mask, _dx2, _dx1);
-                _dy2 = v_select(mask, _dy2, _dy1);
+                    v_store(lutCurr+x+widthP2*0+2, _dx00);
+                    v_store(lutCurr+x+widthP2*1+2, _dx10);
+                    v_store(lutCurr+x+widthP2*2+2, _dx20);
 
-                mask = v_reinterpret_as_f32(v_max(_mag2, _mag1) > _mag0);
-                _dx2 = v_select(mask, _dx2, _dx0);
-                _dy2 = v_select(mask, _dy2, _dy0);
+                    v_float32x4 _dx0 = _dx00 - v_load(lutCurr+x+widthP2*0);
+                    v_float32x4 _dx1 = _dx10 - v_load(lutCurr+x+widthP2*1);
+                    v_float32x4 _dx2 = _dx20 - v_load(lutCurr+x+widthP2*2);
 
-                v_store(dbuf + x, _dx2);
-                v_store(dbuf + x + width, _dy2);
+                    v_float32x4 _dy00 = v_float32x4(lut[prevPtr[x0+0]], lut[prevPtr[x1+0]], lut[prevPtr[x2+0]], lut[prevPtr[x3+0]]);
+                    v_float32x4 _dy01 = v_float32x4(lut[nextPtr[x0+0]], lut[nextPtr[x1+0]], lut[nextPtr[x2+0]], lut[nextPtr[x3+0]]);
+                    v_float32x4 _dy0 = _dy00 - _dy01;
+
+                    v_store(lutPrev+x+widthP2*0+1, _dy00);
+                    v_store(lutNext+x+widthP2*0+1, _dy01);
+
+                    v_float32x4 _dy10 = v_float32x4(lut[prevPtr[x0+1]], lut[prevPtr[x1+1]], lut[prevPtr[x2+1]], lut[prevPtr[x3+1]]);
+                    v_float32x4 _dy11 = v_float32x4(lut[nextPtr[x0+1]], lut[nextPtr[x1+1]], lut[nextPtr[x2+1]], lut[nextPtr[x3+1]]);
+                    v_float32x4 _dy1 = _dy10 - _dy11;
+
+                    v_store(lutPrev+x+widthP2*1+1, _dy10);
+                    v_store(lutNext+x+widthP2*1+1, _dy11);
+
+                    v_float32x4 _dy20 = v_float32x4(lut[prevPtr[x0+2]], lut[prevPtr[x1+2]], lut[prevPtr[x2+2]], lut[prevPtr[x3+2]]);
+                    v_float32x4 _dy21 = v_float32x4(lut[nextPtr[x0+2]], lut[nextPtr[x1+2]], lut[nextPtr[x2+2]], lut[nextPtr[x3+2]]);
+                    v_float32x4 _dy2 = _dy20 - _dy21;
+
+                    v_store(lutPrev+x+widthP2*2+1, _dy20);
+                    v_store(lutNext+x+widthP2*2+1, _dy21);
+
+                    v_float32x4 _mag0 = (_dx0 * _dx0) + (_dy0 * _dy0);
+                    v_float32x4 _mag1 = (_dx1 * _dx1) + (_dy1 * _dy1);
+                    v_float32x4 _mag2 = (_dx2 * _dx2) + (_dy2 * _dy2);
+
+                    v_float32x4 mask = v_reinterpret_as_f32(_mag2 > _mag1);
+                    _dx2 = v_select(mask, _dx2, _dx1);
+                    _dy2 = v_select(mask, _dy2, _dy1);
+
+                    mask = v_reinterpret_as_f32(v_max(_mag2, _mag1) > _mag0);
+                    _dx2 = v_select(mask, _dx2, _dx0);
+                    _dy2 = v_select(mask, _dy2, _dy0);
+
+                    v_store(dbuf + x, _dx2);
+                    v_store(dbuf + x + width, _dy2);
+                }
+                {
+                    int x0 = xmap[x];
+
+                    lutPrev[x+widthP2*0+1] = lut[prevPtr[x0+0]];
+                    lutPrev[x+widthP2*1+1] = lut[prevPtr[x0+1]];
+                    lutPrev[x+widthP2*2+1] = lut[prevPtr[x0+2]];
+                    lutNext[x+widthP2*0+1] = lut[nextPtr[x0+0]];
+                    lutNext[x+widthP2*1+1] = lut[nextPtr[x0+1]];
+                    lutNext[x+widthP2*2+1] = lut[nextPtr[x0+2]];
+                }
+            }
+            else
+            {
+                int yMod = y%3;
+
+                // Circular lut history buffer
+                if (yMod == 0)
+                {
+                    lutPrev = lutBuf+widthP2*0;
+                    lutCurr = lutBuf+widthP2*3;
+                    lutNext = lutBuf+widthP2*6;
+                }
+                else if (yMod == 1)
+                {
+                    lutPrev = lutBuf+widthP2*3;
+                    lutCurr = lutBuf+widthP2*6;
+                    lutNext = lutBuf+widthP2*0;
+                }
+                else
+                {
+                    lutPrev = lutBuf+widthP2*6;
+                    lutCurr = lutBuf+widthP2*0;
+                    lutNext = lutBuf+widthP2*3;
+                }
+
+                {
+                    int x0 = xmap[-1];
+
+                    lutNext[0+widthP2*0] = lut[nextPtr[x0+0]];
+                    lutNext[0+widthP2*1] = lut[nextPtr[x0+1]];
+                    lutNext[0+widthP2*2] = lut[nextPtr[x0+2]];
+                }
+                for( ; x <= width - 4; x += 4 )
+                {
+                    int x0 = xmap[x], x1 = xmap[x+1], x2 = xmap[x+2], x3 = xmap[x+3];
+
+                    v_float32x4 _dx0 = v_load(lutCurr+x+widthP2*0+2) - v_load(lutCurr+x+widthP2*0);
+                    v_float32x4 _dx1 = v_load(lutCurr+x+widthP2*1+2) - v_load(lutCurr+x+widthP2*1);
+                    v_float32x4 _dx2 = v_load(lutCurr+x+widthP2*2+2) - v_load(lutCurr+x+widthP2*2);
+
+                    v_float32x4 _dy00 = v_float32x4(lut[nextPtr[x0+0]], lut[nextPtr[x1+0]], lut[nextPtr[x2+0]], lut[nextPtr[x3+0]]);
+                    v_float32x4 _dy0 = _dy00 - v_load(lutPrev+x+widthP2*0+1);
+
+                    v_store(lutNext+x+widthP2*0+1, _dy00);
+
+                    v_float32x4 _dy10 = v_float32x4(lut[nextPtr[x0+1]], lut[nextPtr[x1+1]], lut[nextPtr[x2+1]], lut[nextPtr[x3+1]]);
+                    v_float32x4 _dy1 = _dy10 - v_load(lutPrev+x+widthP2*1+1);
+
+                    v_store(lutNext+x+widthP2*1+1, _dy10);
+
+                    v_float32x4 _dy20 = v_float32x4(lut[nextPtr[x0+2]], lut[nextPtr[x1+2]], lut[nextPtr[x2+2]], lut[nextPtr[x3+2]]);
+                    v_float32x4 _dy2 = _dy20 - v_load(lutPrev+x+widthP2*2+1);
+
+                    v_store(lutNext+x+widthP2*2+1, _dy20);
+
+                    v_float32x4 _mag0 = (_dx0 * _dx0) + (_dy0 * _dy0);
+                    v_float32x4 _mag1 = (_dx1 * _dx1) + (_dy1 * _dy1);
+                    v_float32x4 _mag2 = (_dx2 * _dx2) + (_dy2 * _dy2);
+
+                    v_float32x4 mask = v_reinterpret_as_f32(_mag2 > _mag1);
+                    _dx2 = v_select(mask, _dx2, _dx1);
+                    _dy2 = v_select(mask, _dy2, _dy1);
+
+                    mask = v_reinterpret_as_f32(v_max(_mag2, _mag1) > _mag0);
+                    _dx2 = v_select(mask, _dx2, _dx0);
+                    _dy2 = v_select(mask, _dy2, _dy0);
+
+                    v_store(dbuf + x, _dx2);
+                    v_store(dbuf + x + width, _dy2);
+                }
+                {
+                    int x0 = xmap[x];
+
+                    lutNext[x+widthP2*0+1] = lut[nextPtr[x0+0]];
+                    lutNext[x+widthP2*1+1] = lut[nextPtr[x0+1]];
+                    lutNext[x+widthP2*2+1] = lut[nextPtr[x0+2]];
+                }
             }
 #endif
             for( ; x < width; x++ )
@@ -1127,7 +1253,7 @@ static bool ocl_compute_hists(int nbins, int block_stride_x, int block_stride_y,
     if(is_cpu)
        opts = "-D CPU ";
     else
-        opts = cv::format("-D WAVE_SIZE=%zu", k.preferedWorkGroupSizeMultiple());
+        opts = cv::format("-D WAVE_SIZE=%d", k.preferedWorkGroupSizeMultiple());
     k.create("compute_hists_lut_kernel", ocl::objdetect::objdetect_hog_oclsrc, opts);
     if(k.empty())
         return false;
@@ -1200,7 +1326,7 @@ static bool ocl_normalize_hists(int nbins, int block_stride_x, int block_stride_
         if(is_cpu)
            opts = "-D CPU ";
         else
-            opts = cv::format("-D WAVE_SIZE=%zu", k.preferedWorkGroupSizeMultiple());
+            opts = cv::format("-D WAVE_SIZE=%d", k.preferedWorkGroupSizeMultiple());
         k.create("normalize_hists_36_kernel", ocl::objdetect::objdetect_hog_oclsrc, opts);
         if(k.empty())
             return false;
@@ -1219,7 +1345,7 @@ static bool ocl_normalize_hists(int nbins, int block_stride_x, int block_stride_
         if(is_cpu)
            opts = "-D CPU ";
         else
-            opts = cv::format("-D WAVE_SIZE=%zu", k.preferedWorkGroupSizeMultiple());
+            opts = cv::format("-D WAVE_SIZE=%d", k.preferedWorkGroupSizeMultiple());
         k.create("normalize_hists_kernel", ocl::objdetect::objdetect_hog_oclsrc, opts);
         if(k.empty())
             return false;
@@ -1312,7 +1438,7 @@ static bool ocl_extract_descrs_by_cols(int win_height, int win_width, int block_
     return k.run(2, globalThreads, localThreads, false);
 }
 
-static bool ocl_compute(InputArray _img, Size win_stride, std::vector<float>& _descriptors, HOGDescriptor::DescriptorStorageFormat descr_format, Size blockSize,
+static bool ocl_compute(InputArray _img, Size win_stride, std::vector<float>& _descriptors, int descr_format, Size blockSize,
                         Size cellSize, int nbins, Size blockStride, Size winSize, float sigma, bool gammaCorrection, double L2HysThreshold, bool signedGradient)
 {
     Size imgSize = _img.size();
@@ -1361,13 +1487,13 @@ static bool ocl_compute(InputArray _img, Size win_stride, std::vector<float>& _d
     UMat descriptors(wins_per_img.area(), static_cast<int>(blocks_per_win.area() * block_hist_size), CV_32F);
     switch (descr_format)
     {
-    case HOGDescriptor::DESCR_FORMAT_ROW_BY_ROW:
+    case DESCR_FORMAT_ROW_BY_ROW:
         if(!ocl_extract_descrs_by_rows(winSize.height, winSize.width,
             blockStride.height, blockStride.width, win_stride.height, win_stride.width, effect_size.height,
             effect_size.width, block_hists, descriptors, (int)block_hist_size, descr_size, descr_width))
             return false;
         break;
-    case HOGDescriptor::DESCR_FORMAT_COL_BY_COL:
+    case DESCR_FORMAT_COL_BY_COL:
         if(!ocl_extract_descrs_by_cols(winSize.height, winSize.width,
             blockStride.height, blockStride.width, win_stride.height, win_stride.width, effect_size.height, effect_size.width,
             block_hists, descriptors, (int)block_hist_size, descr_size, blocks_per_win.width, blocks_per_win.height))
@@ -1399,7 +1525,7 @@ void HOGDescriptor::compute(InputArray _img, std::vector<float>& descriptors,
     Size paddedImgSize(imgSize.width + padding.width*2, imgSize.height + padding.height*2);
 
     CV_OCL_RUN(_img.dims() <= 2 && _img.type() == CV_8UC1 && _img.isUMat(),
-        ocl_compute(_img, winStride, descriptors, HOGDescriptor::DESCR_FORMAT_COL_BY_COL, blockSize,
+        ocl_compute(_img, winStride, descriptors, DESCR_FORMAT_COL_BY_COL, blockSize,
         cellSize, nbins, blockStride, winSize, (float)getWinSigma(), gammaCorrection, L2HysThreshold, signedGradient))
 
     Mat img = _img.getMat();
@@ -1447,13 +1573,12 @@ void HOGDescriptor::compute(InputArray _img, std::vector<float>& descriptors,
     }
 }
 
-void HOGDescriptor::detect(InputArray _img,
+void HOGDescriptor::detect(const Mat& img,
     std::vector<Point>& hits, std::vector<double>& weights, double hitThreshold,
     Size winStride, Size padding, const std::vector<Point>& locations) const
 {
     CV_INSTRUMENT_REGION();
 
-    Mat img = _img.getMat();
     hits.clear();
     weights.clear();
     if( svmDetector.empty() )
@@ -1545,7 +1670,7 @@ void HOGDescriptor::detect(InputArray _img,
     }
 }
 
-void HOGDescriptor::detect(InputArray img, std::vector<Point>& hits, double hitThreshold,
+void HOGDescriptor::detect(const Mat& img, std::vector<Point>& hits, double hitThreshold,
     Size winStride, Size padding, const std::vector<Point>& locations) const
 {
     CV_INSTRUMENT_REGION();
@@ -1653,7 +1778,7 @@ static bool ocl_classify_hists(int win_height, int win_width, int block_stride_y
         if(is_cpu)
            opts = "-D CPU ";
         else
-            opts = cv::format("-D WAVE_SIZE=%zu", k.preferedWorkGroupSizeMultiple());
+            opts = cv::format("-D WAVE_SIZE=%d", k.preferedWorkGroupSizeMultiple());
         k.create("classify_hists_180_kernel", ocl::objdetect::objdetect_hog_oclsrc, opts);
         if(k.empty())
             return false;
@@ -1669,7 +1794,7 @@ static bool ocl_classify_hists(int win_height, int win_width, int block_stride_y
         if(is_cpu)
            opts = "-D CPU ";
         else
-            opts = cv::format("-D WAVE_SIZE=%zu", k.preferedWorkGroupSizeMultiple());
+            opts = cv::format("-D WAVE_SIZE=%d", k.preferedWorkGroupSizeMultiple());
         k.create("classify_hists_252_kernel", ocl::objdetect::objdetect_hog_oclsrc, opts);
         if(k.empty())
             return false;
@@ -1685,7 +1810,7 @@ static bool ocl_classify_hists(int win_height, int win_width, int block_stride_y
         if(is_cpu)
            opts = "-D CPU ";
         else
-            opts = cv::format("-D WAVE_SIZE=%zu", k.preferedWorkGroupSizeMultiple());
+            opts = cv::format("-D WAVE_SIZE=%d", k.preferedWorkGroupSizeMultiple());
         k.create("classify_hists_kernel", ocl::objdetect::objdetect_hog_oclsrc, opts);
         if(k.empty())
             return false;
@@ -1893,6 +2018,62 @@ void HOGDescriptor::detectMultiScale(InputArray img, std::vector<Rect>& foundLoc
     detectMultiScale(img, foundLocations, foundWeights, hitThreshold, winStride,
                 padding, scale0, finalThreshold, useMeanshiftGrouping);
 }
+
+template<typename _ClsName> struct RTTIImpl
+{
+public:
+    static int isInstance(const void* ptr)
+    {
+        static _ClsName dummy;
+        static void* dummyp = &dummy;
+        union
+        {
+            const void* p;
+            const void** pp;
+        } a, b;
+        a.p = dummyp;
+        b.p = ptr;
+        return *a.pp == *b.pp;
+    }
+    static void release(void** dbptr)
+    {
+        if(dbptr && *dbptr)
+        {
+            delete (_ClsName*)*dbptr;
+            *dbptr = 0;
+        }
+    }
+    static void* read(CvFileStorage* fs, CvFileNode* n)
+    {
+        FileNode fn(fs, n);
+        _ClsName* obj = new _ClsName;
+        if(obj->read(fn))
+            return obj;
+        delete obj;
+        return 0;
+    }
+
+    static void write(CvFileStorage* _fs, const char* name, const void* ptr, CvAttrList)
+    {
+        if(ptr && _fs)
+        {
+            FileStorage fs(_fs, false);
+            ((const _ClsName*)ptr)->write(fs, String(name));
+        }
+    }
+
+    static void* clone(const void* ptr)
+    {
+        if(!ptr)
+            return 0;
+        return new _ClsName(*(const _ClsName*)ptr);
+    }
+};
+
+typedef RTTIImpl<HOGDescriptor> HOGRTTI;
+
+CvType hog_type( CV_TYPE_NAME_HOG_DESCRIPTOR, HOGRTTI::isInstance,
+    HOGRTTI::release, HOGRTTI::read, HOGRTTI::write, HOGRTTI::clone);
 
 std::vector<float> HOGDescriptor::getDefaultPeopleDetector()
 {
@@ -3269,13 +3450,12 @@ public:
     Mutex* mtx;
 };
 
-void HOGDescriptor::detectROI(InputArray _img, const std::vector<cv::Point> &locations,
+void HOGDescriptor::detectROI(const cv::Mat& img, const std::vector<cv::Point> &locations,
     CV_OUT std::vector<cv::Point>& foundLocations, CV_OUT std::vector<double>& confidences,
     double hitThreshold, cv::Size winStride, cv::Size padding) const
 {
     CV_INSTRUMENT_REGION();
 
-    Mat img = _img.getMat();
     foundLocations.clear();
     confidences.clear();
 
@@ -3366,13 +3546,12 @@ void HOGDescriptor::detectROI(InputArray _img, const std::vector<cv::Point> &loc
     }
 }
 
-void HOGDescriptor::detectMultiScaleROI(InputArray _img,
+void HOGDescriptor::detectMultiScaleROI(const cv::Mat& img,
     CV_OUT std::vector<cv::Rect>& foundLocations, std::vector<DetectionROI>& locations,
     double hitThreshold, int groupThreshold) const
 {
     CV_INSTRUMENT_REGION();
 
-    Mat img = _img.getMat();
     std::vector<Rect> allCandidates;
     Mutex mtx;
 
@@ -3383,6 +3562,110 @@ void HOGDescriptor::detectMultiScaleROI(InputArray _img,
     foundLocations.resize(allCandidates.size());
     std::copy(allCandidates.begin(), allCandidates.end(), foundLocations.begin());
     cv::groupRectangles(foundLocations, groupThreshold, 0.2);
+}
+
+void HOGDescriptor::readALTModel(String modelfile)
+{
+    // read model from SVMlight format..
+    FILE *modelfl;
+    if ((modelfl = fopen(modelfile.c_str(), "rb")) == NULL)
+    {
+        String eerr("file not exist");
+        String efile(__FILE__);
+        String efunc(__FUNCTION__);
+        throw Exception(Error::StsError, eerr, efile, efunc, __LINE__);
+    }
+    char version_buffer[10];
+    if (!fread (&version_buffer,sizeof(char),10,modelfl))
+    {
+        String eerr("version?");
+        String efile(__FILE__);
+        String efunc(__FUNCTION__);
+        fclose(modelfl);
+
+        throw Exception(Error::StsError, eerr, efile, efunc, __LINE__);
+    }
+    if(strcmp(version_buffer,"V6.01")) {
+        String eerr("version does not match");
+        String efile(__FILE__);
+        String efunc(__FUNCTION__);
+        fclose(modelfl);
+
+        throw Exception(Error::StsError, eerr, efile, efunc, __LINE__);
+    }
+    /* read version number */
+    int version = 0;
+    if (!fread (&version,sizeof(int),1,modelfl))
+    {
+        fclose(modelfl);
+        throw Exception();
+    }
+    if (version < 200)
+    {
+        String eerr("version does not match");
+        String efile(__FILE__);
+        String efunc(__FUNCTION__);
+        fclose(modelfl);
+        throw Exception();
+    }
+    int kernel_type;
+    size_t nread;
+    nread=fread(&(kernel_type),sizeof(int),1,modelfl);
+
+    {// ignore these
+        int poly_degree;
+        nread=fread(&(poly_degree),sizeof(int),1,modelfl);
+
+        double rbf_gamma;
+        nread=fread(&(rbf_gamma),sizeof(double), 1, modelfl);
+        double coef_lin;
+        nread=fread(&(coef_lin),sizeof(double),1,modelfl);
+        double coef_const;
+        nread=fread(&(coef_const),sizeof(double),1,modelfl);
+        int l;
+        nread=fread(&l,sizeof(int),1,modelfl);
+        CV_Assert(l >= 0 && l < 0xFFFF);
+        char* custom = new char[l];
+        nread=fread(custom,sizeof(char),l,modelfl);
+        delete[] custom;
+    }
+    int totwords;
+    nread=fread(&(totwords),sizeof(int),1,modelfl);
+    {// ignore these
+        int totdoc;
+        nread=fread(&(totdoc),sizeof(int),1,modelfl);
+        int sv_num;
+        nread=fread(&(sv_num), sizeof(int),1,modelfl);
+    }
+
+    double linearbias;
+    nread=fread(&linearbias, sizeof(double), 1, modelfl);
+
+    std::vector<float> detector;
+    detector.clear();
+    if(kernel_type == 0) { /* linear kernel */
+        /* save linear wts also */
+        CV_Assert(totwords + 1 > 0 && totwords < 0xFFFF);
+        double *linearwt = new double[totwords+1];
+        int length = totwords;
+        nread = fread(linearwt, sizeof(double), totwords + 1, modelfl);
+        if(nread != static_cast<size_t>(length) + 1) {
+            delete [] linearwt;
+            fclose(modelfl);
+            throw Exception();
+        }
+
+        for(int i = 0; i < length; i++)
+            detector.push_back((float)linearwt[i]);
+
+        detector.push_back((float)-linearbias);
+        setSVMDetector(detector);
+        delete [] linearwt;
+    } else {
+        fclose(modelfl);
+        throw Exception();
+    }
+    fclose(modelfl);
 }
 
 void HOGDescriptor::groupRectangles(std::vector<cv::Rect>& rectList, std::vector<double>& weights, int groupThreshold, double eps) const

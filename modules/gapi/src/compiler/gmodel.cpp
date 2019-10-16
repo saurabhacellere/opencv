@@ -14,7 +14,7 @@
 #include <ade/util/zip_range.hpp>   // util::indexed
 #include <ade/util/checked_cast.hpp>
 
-#include <opencv2/gapi/gproto.hpp>
+#include "opencv2/gapi/gproto.hpp"
 #include "api/gnode_priv.hpp"
 #include "compiler/gobjref.hpp"
 #include "compiler/gmodel.hpp"
@@ -47,7 +47,7 @@ ade::NodeHandle GModel::mkDataNode(GModel::Graph &g, const GOrigin& origin)
     {
         auto value = value_of(origin);
         meta       = descr_of(value);
-        storage    = Data::Storage::CONST_VAL;
+        storage    = Data::Storage::CONST;
         g.metadata(data_h).set(ConstValue{value});
     }
     g.metadata(data_h).set(Data{origin.shape, id, meta, origin.ctor, storage});
@@ -114,7 +114,7 @@ void GModel::linkOut(Graph &g, ade::NodeHandle opH, ade::NodeHandle objH, std::s
     op.outs[out_port] = RcDesc{gm.rc, gm.shape, {}};
 }
 
-std::vector<ade::NodeHandle> GModel::orderedInputs(ConstGraph &g, ade::NodeHandle nh)
+std::vector<ade::NodeHandle> GModel::orderedInputs(Graph &g, ade::NodeHandle nh)
 {
     std::vector<ade::NodeHandle> sorted_in_nhs(nh->inEdges().size());
     for (const auto& in_eh : nh->inEdges())
@@ -126,7 +126,7 @@ std::vector<ade::NodeHandle> GModel::orderedInputs(ConstGraph &g, ade::NodeHandl
     return sorted_in_nhs;
 }
 
-std::vector<ade::NodeHandle> GModel::orderedOutputs(ConstGraph &g, ade::NodeHandle nh)
+std::vector<ade::NodeHandle> GModel::orderedOutputs(Graph &g, ade::NodeHandle nh)
 {
     std::vector<ade::NodeHandle> sorted_out_nhs(nh->outEdges().size());
     for (const auto& out_eh : nh->outEdges())
@@ -184,16 +184,6 @@ void GModel::log(Graph &g, ade::EdgeHandle eh, std::string &&msg, ade::NodeHandl
         g.metadata(eh).set(Journal{{s}});
     }
 }
-
-void GModel::log_clear(Graph &g, ade::NodeHandle node)
-{
-    if (g.metadata(node).contains<Journal>())
-    {
-        // according to documentation, clear() doesn't deallocate (__capacity__ of vector preserved)
-        g.metadata(node).get<Journal>().messages.clear();
-    }
-}
-
 
 ade::NodeHandle GModel::detail::dataNodeOf(const ConstLayoutGraph &g, const GOrigin &origin)
 {

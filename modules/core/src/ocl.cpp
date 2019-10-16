@@ -205,7 +205,7 @@ void traceOpenCLCheck(cl_int status, const char* message)
         CV_OCL_TRACE_CHECK_RESULT(check_result, msg); \
         if (check_result != CL_SUCCESS) \
         { \
-            static_assert(std::is_convertible<decltype(msg), const char*>::value, "msg of CV_OCL_CHECK_RESULT must be const char*"); \
+            if (0) { const char* msg_ = (msg); CV_UNUSED(msg_); /* ensure const char* type (cv::String without c_str()) */ } \
             cv::String error_msg = CV_OCL_API_ERROR_MSG(check_result, msg); \
             CV_Error(Error::OpenCLApiCallError, error_msg); \
         } \
@@ -225,7 +225,7 @@ void traceOpenCLCheck(cl_int status, const char* message)
         CV_OCL_TRACE_CHECK_RESULT(check_result, msg); \
         if (check_result != CL_SUCCESS && isRaiseError()) \
         { \
-            static_assert(std::is_convertible<decltype(msg), const char*>::value, "msg of CV_OCL_DBG_CHECK_RESULT must be const char*"); \
+            if (0) { const char* msg_ = (msg); CV_UNUSED(msg_); /* ensure const char* type (cv::String without c_str()) */ } \
             cv::String error_msg = CV_OCL_API_ERROR_MSG(check_result, msg); \
             CV_Error(Error::OpenCLApiCallError, error_msg); \
         } \
@@ -266,9 +266,6 @@ static const String getBuildExtraOptions()
     }
     return param_buildExtraOptions;
 }
-
-static const bool CV_OPENCL_ENABLE_MEM_USE_HOST_PTR = utils::getConfigurationParameterBool("OPENCV_OPENCL_ENABLE_MEM_USE_HOST_PTR", true);
-static const size_t CV_OPENCL_ALIGNMENT_MEM_USE_HOST_PTR = utils::getConfigurationParameterSizeT("OPENCV_OPENCL_ALIGNMENT_MEM_USE_HOST_PTR", 4);
 
 #endif // HAVE_OPENCL
 
@@ -1725,7 +1722,7 @@ static bool parseOpenCLDeviceConfiguration(const std::string& configurationStr,
     return true;
 }
 
-#if defined WINRT || defined _WIN32_WCE
+#ifdef WINRT
 static cl_device_id selectOpenCLDevice()
 {
     return NULL;
@@ -4674,9 +4671,6 @@ public:
 
     bool allocate(UMatData* u, AccessFlag accessFlags, UMatUsageFlags usageFlags) const CV_OVERRIDE
     {
-#ifndef HAVE_OPENCL
-        return false;
-#else
         if(!u)
             return false;
 
@@ -4752,12 +4746,8 @@ public:
 #endif
             {
                 tempUMatFlags = UMatData::TEMP_UMAT;
-                if (CV_OPENCL_ENABLE_MEM_USE_HOST_PTR
-                    // There are OpenCL runtime issues for less aligned data
-                    && (CV_OPENCL_ALIGNMENT_MEM_USE_HOST_PTR != 0
-                        && u->origdata == cv::alignPtr(u->origdata, (int)CV_OPENCL_ALIGNMENT_MEM_USE_HOST_PTR))
-                    // Avoid sharing of host memory between OpenCL buffers
-                    && !(u->originalUMatData && u->originalUMatData->handle)
+                if (u->origdata == cv::alignPtr(u->origdata, 4)  // There are OpenCL runtime issues for less aligned data
+                    && !(u->originalUMatData && u->originalUMatData->handle)  // Avoid sharing of host memory between OpenCL buffers
                 )
                 {
                     handle = clCreateBuffer(ctx_handle, CL_MEM_USE_HOST_PTR|createFlags,
@@ -4787,7 +4777,6 @@ public:
             u->markHostCopyObsolete(true);
         opencl_allocator_stats.onAllocate(u->size);
         return true;
-#endif  // HAVE_OPENCL
     }
 
     /*void sync(UMatData* u) const
@@ -4916,7 +4905,7 @@ public:
                                 (CL_MAP_READ | CL_MAP_WRITE),
                                 0, u->size, 0, 0, 0, &retval);
                             CV_OCL_CHECK_RESULT(retval, cv::format("clEnqueueMapBuffer(handle=%p, sz=%lld) => %p", (void*)u->handle, (long long int)u->size, data).c_str());
-                            CV_Assert(u->origdata == data && "Details: https://github.com/opencv/opencv/issues/6293");
+                            CV_Assert(u->origdata == data);
                             if (u->originalUMatData)
                             {
                                 CV_Assert(u->originalUMatData->data == data);
@@ -5767,7 +5756,7 @@ public:
 
 static OpenCLAllocator* getOpenCLAllocator_() // call once guarantee
 {
-    static OpenCLAllocator* g_allocator = new OpenCLAllocator(); // avoid destructor call (using of this object is too wide)
+    static OpenCLAllocator* g_allocator = new OpenCLAllocator(); // avoid destrutor call (using of this object is too wide)
     g_isOpenCVActivated = true;
     return g_allocator;
 }

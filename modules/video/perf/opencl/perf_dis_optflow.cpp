@@ -37,11 +37,10 @@ OCL_PERF_TEST_P(DenseOpticalFlow_DIS, perf,
 
     Ptr<DenseOpticalFlow> algo = DISOpticalFlow::create(preset);
 
-    PERF_SAMPLE_BEGIN()
+    OCL_TEST_CYCLE_N(10)
     {
         algo->calc(frame1, frame2, flow);
     }
-    PERF_SAMPLE_END()
 
     SANITY_CHECK_NOTHING();
 }

@@ -388,7 +388,3 @@ TEST(Imgcodecs, write_parameter_type)
 }
 
 }} // namespace
-
-#ifdef HAVE_OPENEXR
-#include "test_exr.impl.hpp"
-#endif

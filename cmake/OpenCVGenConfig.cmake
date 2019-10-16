@@ -41,7 +41,7 @@ foreach(m ${OPENCV_MODULES_BUILD})
   endif()
 endforeach()
 
-export(EXPORT OpenCVModules FILE "${CMAKE_BINARY_DIR}/OpenCVModules.cmake")
+export(TARGETS ${OpenCVModules_TARGETS} FILE "${CMAKE_BINARY_DIR}/OpenCVModules.cmake")
 
 if(TARGET ippicv AND NOT BUILD_SHARED_LIBS)
   set(USE_IPPICV TRUE)
@@ -68,11 +68,7 @@ configure_file("${OpenCV_SOURCE_DIR}/cmake/templates/OpenCVConfig-version.cmake.
 #  Part 2/3: ${BIN_DIR}/unix-install/OpenCVConfig.cmake -> For use *with* "make install"
 # -------------------------------------------------------------------------------------------
 file(RELATIVE_PATH OpenCV_INSTALL_PATH_RELATIVE_CONFIGCMAKE "${CMAKE_INSTALL_PREFIX}/${OPENCV_CONFIG_INSTALL_PATH}/" ${CMAKE_INSTALL_PREFIX})
-if (IS_ABSOLUTE ${OPENCV_INCLUDE_INSTALL_PATH})
-  set(OpenCV_INCLUDE_DIRS_CONFIGCMAKE "\"${OPENCV_INCLUDE_INSTALL_PATH}\"")
-else()
-  set(OpenCV_INCLUDE_DIRS_CONFIGCMAKE "\"\${OpenCV_INSTALL_PATH}/${OPENCV_INCLUDE_INSTALL_PATH}\"")
-endif()
+set(OpenCV_INCLUDE_DIRS_CONFIGCMAKE "\"\${OpenCV_INSTALL_PATH}/${OPENCV_INCLUDE_INSTALL_PATH}\"")
 
 if(USE_IPPICV)
   file(RELATIVE_PATH IPPICV_INSTALL_PATH_RELATIVE_CONFIGCMAKE "${CMAKE_INSTALL_PREFIX}" "${IPPICV_INSTALL_PATH}")
@@ -122,10 +118,13 @@ endif()
 #  Part 3/3: ${BIN_DIR}/win-install/OpenCVConfig.cmake  -> For use within binary installers/packages
 # --------------------------------------------------------------------------------------------
 if(WIN32)
-  if(CMAKE_HOST_SYSTEM_NAME MATCHES Windows AND NOT OPENCV_SKIP_CMAKE_ROOT_CONFIG)
-    ocv_gen_config("${CMAKE_BINARY_DIR}/win-install"
-                   "${OPENCV_INSTALL_BINARIES_PREFIX}${OPENCV_INSTALL_BINARIES_SUFFIX}"
-                   "OpenCVConfig.root-WIN32.cmake.in")
+  if(CMAKE_HOST_SYSTEM_NAME MATCHES Windows)
+    if(BUILD_SHARED_LIBS)
+      set(_lib_suffix "lib")
+    else()
+      set(_lib_suffix "staticlib")
+    endif()
+    ocv_gen_config("${CMAKE_BINARY_DIR}/win-install" "${OpenCV_INSTALL_BINARIES_PREFIX}${_lib_suffix}" "OpenCVConfig.root-WIN32.cmake.in")
   else()
     ocv_gen_config("${CMAKE_BINARY_DIR}/win-install" "" "")
   endif()

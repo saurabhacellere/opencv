@@ -8,24 +8,23 @@
 
 #include "precomp.hpp"
 
-#include <opencv2/gapi/own/assert.hpp>
-#include <opencv2/core/traits.hpp>
-#include <opencv2/core/hal/hal.hpp>
-#include <opencv2/core/hal/intrin.hpp>
+#include "opencv2/gapi/own/assert.hpp"
+#include "opencv2/core/traits.hpp"
+#include "opencv2/core/hal/hal.hpp"
+#include "opencv2/core/hal/intrin.hpp"
 
-#include <opencv2/gapi/core.hpp>
+#include "opencv2/gapi/core.hpp"
 
-#include <opencv2/gapi/fluid/gfluidbuffer.hpp>
-#include <opencv2/gapi/fluid/gfluidkernel.hpp>
-#include <opencv2/gapi/fluid/core.hpp>
+#include "opencv2/gapi/fluid/gfluidbuffer.hpp"
+#include "opencv2/gapi/fluid/gfluidkernel.hpp"
+#include "opencv2/gapi/fluid/core.hpp"
 
 #include "gfluidbuffer_priv.hpp"
 #include "gfluidbackend.hpp"
 #include "gfluidutils.hpp"
 
-#include <math.h>
-
 #include <cassert>
+#include <cmath>
 #include <cstdlib>
 
 namespace cv {
@@ -390,7 +389,7 @@ static void run_arithm_s1(uchar out[], const float in[], int width, const float 
     cv::util::suppress_unused_warning(v_op);
     for (; w < width; w++)
     {
-        out[w] = saturate<uchar>(s_op(in[w], scalar[0]), roundf);
+        out[w] = saturate<uchar>(s_op(in[w], scalar[0]), std::roundf);
     }
 }
 
@@ -1523,12 +1522,12 @@ static void run_inrange3(uchar out[], const uchar in[], int width,
         v_uint8x16 i0, i1, i2;
         v_load_deinterleave(&in[3*w], i0, i1, i2);
 
-        v_uint8x16 o;
+        v_mask8x16 o;
         o = (i0 >= v_setall_u8(lower[0])) & (i0 <= v_setall_u8(upper[0])) &
             (i1 >= v_setall_u8(lower[1])) & (i1 <= v_setall_u8(upper[1])) &
             (i2 >= v_setall_u8(lower[2])) & (i2 <= v_setall_u8(upper[2]));
 
-        v_store(&out[w], o);
+        v_store(&out[w], v_uint8x16::fromMask(o));
     }
 #endif
 
@@ -1647,14 +1646,13 @@ static void run_select_row3(int width, uchar out[], uchar in1[], uchar in2[], uc
     {
         v_uint8x16 a1, b1, c1;
         v_uint8x16 a2, b2, c2;
-        v_uint8x16 mask;
+        v_mask8x16 mask;
         v_uint8x16 a, b, c;
 
         v_load_deinterleave(&in1[3*w], a1, b1, c1);
         v_load_deinterleave(&in2[3*w], a2, b2, c2);
 
-        mask = v_load(&in3[w]);
-        mask = mask != v_setzero_u8();
+        mask = v_load(&in3[w]) != v_setzero_u8();
 
         a = v_select(mask, a1, a2);
         b = v_select(mask, b1, b2);
@@ -1921,8 +1919,8 @@ GAPI_FLUID_KERNEL(GFluidPolarToCart, cv::gapi::core::GPolarToCart, false)
                           in2[l] * static_cast<float>(CV_PI / 180):
                           in2[l];
             float magnitude = in1[l];
-            float x = magnitude * cosf(angle);
-            float y = magnitude * sinf(angle);
+            float x = magnitude * std::cos(angle);
+            float y = magnitude * std::sin(angle);
             out1[l] = x;
             out2[l] = y;
         }
@@ -1955,8 +1953,8 @@ GAPI_FLUID_KERNEL(GFluidCartToPolar, cv::gapi::core::GCartToPolar, false)
         {
             float x = in1[l];
             float y = in2[l];
-            float magnitude = hypotf(y, x);
-            float angle_rad = atan2f(y, x);
+            float magnitude = std::hypot(y, x);
+            float angle_rad = std::atan2(y, x);
             float angle = angleInDegrees?
                           angle_rad * static_cast<float>(180 / CV_PI):
                           angle_rad;
@@ -2118,40 +2116,6 @@ GAPI_FLUID_KERNEL(GFluidSqrt, cv::gapi::core::GSqrt, false)
     }
 };
 
-GAPI_FLUID_KERNEL(GFluidCopy, cv::gapi::core::GCopy, false)
-{
-    static const int Window = 1;
-
-    static void run(const View &src, Buffer &dst)
-    {
-        const auto *in  = src.InLine<uchar>(0);
-              auto *out = dst.OutLine<uchar>();
-
-        GAPI_DbgAssert(dst.length() == src.length());
-        GAPI_DbgAssert(dst.meta().chan == src.meta().chan);
-        GAPI_DbgAssert(dst.meta().depth == src.meta().depth);
-
-        int width = src.length();
-        int elem_size = CV_ELEM_SIZE(CV_MAKETYPE(src.meta().depth, src.meta().chan));
-
-        int w = 0; // cycle counter
-
-    #if CV_SIMD128
-        for (; w <= width*elem_size-16; w+=16)
-        {
-            v_uint8x16 a;
-            a = v_load(&in[w]);
-            v_store(&out[w], a);
-        }
-    #endif
-
-        for (; w < width*elem_size; w++)
-        {
-            out[w] = in[w];
-        }
-    }
-};
-
 } // namespace fliud
 } // namespace gapi
 } // namespace cv
@@ -2207,7 +2171,6 @@ cv::gapi::GKernelPackage cv::gapi::core::fluid::kernels()
             ,GFluidInRange
             ,GFluidResize
             ,GFluidSqrt
-            ,GFluidCopy
         #if 0
             ,GFluidMean        -- not fluid
             ,GFluidSum         -- not fluid

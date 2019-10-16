@@ -97,8 +97,8 @@ copyMask_<uchar>(const uchar* _src, size_t sstep, const uchar* mask, size_t mste
             for( ; x <= size.width - v_uint8::nlanes; x += v_uint8::nlanes )
             {
                 v_uint8 v_src   = vx_load(src  + x),
-                        v_dst   = vx_load(dst  + x),
-                        v_nmask = vx_load(mask + x) == v_zero;
+                        v_dst   = vx_load(dst  + x);
+                v_mask8 v_nmask = vx_load(mask + x) == v_zero;
 
                 v_dst = v_select(v_nmask, v_dst, v_src);
                 v_store(dst + x, v_dst);
@@ -131,12 +131,12 @@ copyMask_<ushort>(const uchar* _src, size_t sstep, const uchar* mask, size_t mst
                 v_uint16 v_src1 = vx_load(src + x), v_src2 = vx_load(src + x + v_uint16::nlanes),
                          v_dst1 = vx_load(dst + x), v_dst2 = vx_load(dst + x + v_uint16::nlanes);
 
-                v_uint8 v_nmask1, v_nmask2;
-                v_uint8 v_nmask = vx_load(mask + x) == v_zero;
-                v_zip(v_nmask, v_nmask, v_nmask1, v_nmask2);
+                v_mask16 v_nmask1, v_nmask2;
+                v_mask8 v_nmask = vx_load(mask + x) == v_zero;
+                v_expand(v_nmask, v_nmask1, v_nmask2);
 
-                v_dst1 = v_select(v_reinterpret_as_u16(v_nmask1), v_dst1, v_src1);
-                v_dst2 = v_select(v_reinterpret_as_u16(v_nmask2), v_dst2, v_src2);
+                v_dst1 = v_select(v_nmask1, v_dst1, v_src1);
+                v_dst2 = v_select(v_nmask2, v_dst2, v_src2);
                 v_store(dst + x, v_dst1);
                 v_store(dst + x + v_uint16::nlanes, v_dst2);
             }
@@ -782,9 +782,35 @@ void flip( InputArray _src, OutputArray _dst, int flip_mode )
         flipHoriz( dst.ptr(), dst.step, dst.ptr(), dst.step, dst.size(), esz );
 }
 
+#ifdef HAVE_OPENCL
+
+static bool ocl_rotate(InputArray _src, OutputArray _dst, int rotateMode)
+{
+    switch (rotateMode)
+    {
+    case ROTATE_90_CLOCKWISE:
+        transpose(_src, _dst);
+        flip(_dst, _dst, 1);
+        break;
+    case ROTATE_180:
+        flip(_src, _dst, -1);
+        break;
+    case ROTATE_90_COUNTERCLOCKWISE:
+        transpose(_src, _dst);
+        flip(_dst, _dst, 0);
+        break;
+    default:
+        break;
+    }
+    return true;
+}
+#endif
+
 void rotate(InputArray _src, OutputArray _dst, int rotateMode)
 {
     CV_Assert(_src.dims() <= 2);
+
+    CV_OCL_RUN(_dst.isUMat(), ocl_rotate(_src, _dst, rotateMode))
 
     switch (rotateMode)
     {

@@ -14,35 +14,13 @@ namespace cv
 CV_CPU_OPTIMIZATION_HAL_NAMESPACE_BEGIN
 
 /** Types **/
-#if CV__SIMD_FORWARD == 1024
-// [todo] 1024
-#error "1024-long ops not implemented yet"
-#elif CV__SIMD_FORWARD == 512
-// 512
-#define __CV_VX(fun)   v512_##fun
-#define __CV_V_UINT8   v_uint8x64
-#define __CV_V_INT8    v_int8x64
-#define __CV_V_UINT16  v_uint16x32
-#define __CV_V_INT16   v_int16x32
-#define __CV_V_UINT32  v_uint32x16
-#define __CV_V_INT32   v_int32x16
-#define __CV_V_UINT64  v_uint64x8
-#define __CV_V_INT64   v_int64x8
-#define __CV_V_FLOAT32 v_float32x16
-#define __CV_V_FLOAT64 v_float64x8
-struct v_uint8x64;
-struct v_int8x64;
-struct v_uint16x32;
-struct v_int16x32;
-struct v_uint32x16;
-struct v_int32x16;
-struct v_uint64x8;
-struct v_int64x8;
-struct v_float32x16;
-struct v_float64x8;
+#if CV__SIMD_FORWARD == 512
+// [todo] 512
+#error "AVX512 Not implemented yet"
 #elif CV__SIMD_FORWARD == 256
 // 256
 #define __CV_VX(fun)   v256_##fun
+#define __CV_VX_T(fun) V256_##fun
 #define __CV_V_UINT8   v_uint8x32
 #define __CV_V_INT8    v_int8x32
 #define __CV_V_UINT16  v_uint16x16
@@ -53,6 +31,12 @@ struct v_float64x8;
 #define __CV_V_INT64   v_int64x4
 #define __CV_V_FLOAT32 v_float32x8
 #define __CV_V_FLOAT64 v_float64x4
+#define __CV_V_MASK8   v_mask8x32
+#define __CV_V_MASK16  v_mask16x16
+#define __CV_V_MASK32  v_mask32x8
+#define __CV_V_MASK64  v_mask64x4
+#define __CV_V_MASKF32 v_maskf32x8
+#define __CV_V_MASKF64 v_maskf64x4
 struct v_uint8x32;
 struct v_int8x32;
 struct v_uint16x16;
@@ -63,9 +47,16 @@ struct v_uint64x4;
 struct v_int64x4;
 struct v_float32x8;
 struct v_float64x4;
+struct v_mask8x32;
+struct v_mask16x16;
+struct v_mask32x8;
+struct v_mask64x4;
+struct v_maskf32x8;
+struct v_maskf64x4;
 #else
 // 128
 #define __CV_VX(fun)   v_##fun
+#define __CV_VX_T(fun) V128_##fun
 #define __CV_V_UINT8   v_uint8x16
 #define __CV_V_INT8    v_int8x16
 #define __CV_V_UINT16  v_uint16x8
@@ -76,6 +67,13 @@ struct v_float64x4;
 #define __CV_V_INT64   v_int64x2
 #define __CV_V_FLOAT32 v_float32x4
 #define __CV_V_FLOAT64 v_float64x2
+#define __CV_V_MASK8   v_mask8x16
+#define __CV_V_MASK16  v_mask16x8
+#define __CV_V_MASK32  v_mask32x4
+#define __CV_V_MASK64  v_mask64x2
+#define __CV_V_MASKF32 v_maskf32x4
+#define __CV_V_MASKF64 v_maskf64x2
+#ifndef CV_SIMD128_CPP
 struct v_uint8x16;
 struct v_int8x16;
 struct v_uint16x8;
@@ -86,7 +84,61 @@ struct v_uint64x2;
 struct v_int64x2;
 struct v_float32x4;
 struct v_float64x2;
+struct v_mask8x16;
+struct v_mask16x8;
+struct v_mask32x4;
+struct v_mask64x2;
+#if CV_VSX || CV_NEON
+typedef v_mask32x4 v_maskf32x4;
+typedef v_mask64x2 v_maskf64x2;
+#else
+struct v_maskf32x4;
+struct v_maskf64x2;
 #endif
+#endif // CV_SIMD128_CPP
+
+#endif // CV__SIMD_FORWARD
+
+/** Traits **/
+template<typename T>
+struct __CV_VX_T(Traits)
+{};
+
+#define CV__IMPL_INTRIN_TRAITS(_c, _v, _v_m, _v_u, _v_s, _v_w, _v_q, _v_r)   \
+    CV__IMPL_INTRIN_TRAITS_(_c, _c, _v, _v_m, _v_u, _v_s, _v_w, _v_q, _v_r)  \
+    CV__IMPL_INTRIN_TRAITS_(_v, _c, _v, _v_m, _v_u, _v_s, _v_w, _v_q, _v_r)
+
+#define CV__IMPL_INTRIN_TRAITS_(_t, _c, _v, _v_m, _v_u, _v_s, _v_w, _v_q, _v_r) \
+    template<>                                                                  \
+    struct __CV_VX_T(Traits)<_t>                                                \
+    {                                                                           \
+        typedef _c c;                                                           \
+        typedef _v v;                                                           \
+        typedef _v_m v_mask;                                                    \
+        typedef _v_u v_unsigned;                                                \
+        typedef _v_s v_signed;                                                  \
+        typedef _v_w v_wide;                                                    \
+        typedef _v_w v_twice;                                                   \
+        typedef _v_q v_quad;                                                    \
+        typedef _v_r v_round;                                                   \
+        enum { nlanes = (CV__SIMD_FORWARD / 8) / sizeof(_c) };                  \
+    };
+
+CV__IMPL_INTRIN_TRAITS(uchar,  __CV_V_UINT8,   __CV_V_MASK8,  __CV_V_UINT8,   __CV_V_INT8,  __CV_V_UINT16,  __CV_V_UINT32, void)
+CV__IMPL_INTRIN_TRAITS(schar,  __CV_V_INT8,    __CV_V_MASK8,  __CV_V_UINT8,   __CV_V_INT8,  __CV_V_INT16,   __CV_V_INT32,  void)
+CV__IMPL_INTRIN_TRAITS(ushort, __CV_V_UINT16,  __CV_V_MASK16, __CV_V_UINT16,  __CV_V_INT16, __CV_V_UINT32,  __CV_V_UINT64, void)
+CV__IMPL_INTRIN_TRAITS(short,  __CV_V_INT16,   __CV_V_MASK16, __CV_V_UINT16,  __CV_V_INT16, __CV_V_INT32,   __CV_V_INT64,  void)
+CV__IMPL_INTRIN_TRAITS(uint,   __CV_V_UINT32,  __CV_V_MASK32, __CV_V_UINT32,  __CV_V_INT32, __CV_V_UINT64,  void,          void)
+CV__IMPL_INTRIN_TRAITS(int,    __CV_V_INT32,   __CV_V_MASK32, __CV_V_UINT32,  __CV_V_INT32, __CV_V_INT64,   void,          void)
+CV__IMPL_INTRIN_TRAITS(uint64, __CV_V_UINT64,  __CV_V_MASK64, __CV_V_UINT64,  __CV_V_INT64, void,           void,          void)
+CV__IMPL_INTRIN_TRAITS(int64,  __CV_V_INT64,   __CV_V_MASK64, __CV_V_UINT64,  __CV_V_INT64, void,           void,          void)
+CV__IMPL_INTRIN_TRAITS(float,  __CV_V_FLOAT32, __CV_V_MASKF32,__CV_V_FLOAT32, __CV_V_INT32, __CV_V_FLOAT64, void,  __CV_V_INT32)
+CV__IMPL_INTRIN_TRAITS(double, __CV_V_FLOAT64, __CV_V_MASKF64,__CV_V_FLOAT64, __CV_V_INT64, void,           void,  __CV_V_INT32)
+
+#undef CV__IMPL_INTRIN_TRAITS
+#undef CV__IMPL_INTRIN_TRAITS_
+
+#ifndef CV_SIMD128_CPP
 
 /** Value reordering **/
 
@@ -97,6 +149,7 @@ void v_expand(const __CV_V_UINT16&, __CV_V_UINT32&, __CV_V_UINT32&);
 void v_expand(const __CV_V_INT16&,  __CV_V_INT32&,  __CV_V_INT32&);
 void v_expand(const __CV_V_UINT32&, __CV_V_UINT64&, __CV_V_UINT64&);
 void v_expand(const __CV_V_INT32&,  __CV_V_INT64&,  __CV_V_INT64&);
+
 // Low Expansion
 __CV_V_UINT16 v_expand_low(const __CV_V_UINT8&);
 __CV_V_INT16  v_expand_low(const __CV_V_INT8&);
@@ -111,6 +164,7 @@ __CV_V_UINT32 v_expand_high(const __CV_V_UINT16&);
 __CV_V_INT32  v_expand_high(const __CV_V_INT16&);
 __CV_V_UINT64 v_expand_high(const __CV_V_UINT32&);
 __CV_V_INT64  v_expand_high(const __CV_V_INT32&);
+
 // Load & Low Expansion
 __CV_V_UINT16 __CV_VX(load_expand)(const uchar*);
 __CV_V_INT16  __CV_VX(load_expand)(const schar*);
@@ -118,6 +172,7 @@ __CV_V_UINT32 __CV_VX(load_expand)(const ushort*);
 __CV_V_INT32  __CV_VX(load_expand)(const short*);
 __CV_V_UINT64 __CV_VX(load_expand)(const uint*);
 __CV_V_INT64  __CV_VX(load_expand)(const int*);
+
 // Load lower 8-bit and expand into 32-bit
 __CV_V_UINT32 __CV_VX(load_expand_q)(const uchar*);
 __CV_V_INT32  __CV_VX(load_expand_q)(const schar*);
@@ -160,19 +215,12 @@ void v_mul_expand(const __CV_V_UINT32&, const __CV_V_UINT32&, __CV_V_UINT64&, __
 void v_mul_expand(const __CV_V_INT32&,  const __CV_V_INT32&,  __CV_V_INT64&,  __CV_V_INT64&);
 #endif
 
-// Conversions
-__CV_V_FLOAT32 v_cvt_f32(const __CV_V_INT32& a);
-__CV_V_FLOAT32 v_cvt_f32(const __CV_V_FLOAT64& a);
-__CV_V_FLOAT32 v_cvt_f32(const __CV_V_FLOAT64& a, const __CV_V_FLOAT64& b);
-__CV_V_FLOAT64 v_cvt_f64(const __CV_V_INT32& a);
-__CV_V_FLOAT64 v_cvt_f64_high(const __CV_V_INT32& a);
-__CV_V_FLOAT64 v_cvt_f64(const __CV_V_FLOAT32& a);
-__CV_V_FLOAT64 v_cvt_f64_high(const __CV_V_FLOAT32& a);
-__CV_V_FLOAT64 v_cvt_f64(const __CV_V_INT64& a);
+#endif // CV_SIMD128_CPP
 
 /** Cleanup **/
 #undef CV__SIMD_FORWARD
 #undef __CV_VX
+#undef __CV_VX_T
 #undef __CV_V_UINT8
 #undef __CV_V_INT8
 #undef __CV_V_UINT16
@@ -183,6 +231,12 @@ __CV_V_FLOAT64 v_cvt_f64(const __CV_V_INT64& a);
 #undef __CV_V_INT64
 #undef __CV_V_FLOAT32
 #undef __CV_V_FLOAT64
+#undef __CV_V_MASK8
+#undef __CV_V_MASK16
+#undef __CV_V_MASK32
+#undef __CV_V_MASK64
+#undef __CV_V_MASKF32
+#undef __CV_V_MASKF64
 
 CV_CPU_OPTIMIZATION_HAL_NAMESPACE_END
 

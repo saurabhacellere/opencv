@@ -68,6 +68,7 @@
 ###############################################################################
 
 from __future__ import print_function
+import json
 import sys, re, os
 from templates import *
 
@@ -112,7 +113,7 @@ imgproc = {'': ['Canny', 'GaussianBlur', 'Laplacian', 'HoughLines', 'HoughLinesP
                 'goodFeaturesToTrack','grabCut','initUndistortRectifyMap', 'integral','integral2', 'isContourConvex', 'line', \
                 'matchShapes', 'matchTemplate','medianBlur', 'minAreaRect', 'minEnclosingCircle', 'moments', 'morphologyEx', \
                 'pointPolygonTest', 'putText','pyrDown','pyrUp','rectangle','remap', 'resize','sepFilter2D','threshold', \
-                'undistort','warpAffine','warpPerspective','warpPolar','watershed', \
+                'undistort','warpAffine','warpPerspective','watershed', \
                 'fillPoly', 'fillConvexPoly'],
            'CLAHE': ['apply', 'collectGarbage', 'getClipLimit', 'getTilesGridSize', 'setClipLimit', 'setTilesGridSize']}
 
@@ -143,35 +144,7 @@ features2d = {'Feature2D': ['detect', 'compute', 'detectAndCompute', 'descriptor
               'BFMatcher': ['isMaskSupported', 'create'],
               '': ['drawKeypoints', 'drawMatches', 'drawMatchesKnn']}
 
-photo = {'': ['createAlignMTB', 'createCalibrateDebevec', 'createCalibrateRobertson', \
-              'createMergeDebevec', 'createMergeMertens', 'createMergeRobertson', \
-              'createTonemapDrago', 'createTonemapMantiuk', 'createTonemapReinhard', 'inpaint'],
-        'CalibrateCRF': ['process'],
-        'AlignMTB' : ['calculateShift', 'shiftMat', 'computeBitmaps', 'getMaxBits', 'setMaxBits', \
-                      'getExcludeRange', 'setExcludeRange', 'getCut', 'setCut'],
-        'CalibrateDebevec' : ['getLambda', 'setLambda', 'getSamples', 'setSamples', 'getRandom', 'setRandom'],
-        'CalibrateRobertson' : ['getMaxIter', 'setMaxIter', 'getThreshold', 'setThreshold', 'getRadiance'],
-        'MergeExposures' : ['process'],
-        'MergeDebevec' : ['process'],
-        'MergeMertens' : ['process', 'getContrastWeight', 'setContrastWeight', 'getSaturationWeight', \
-                          'setSaturationWeight', 'getExposureWeight', 'setExposureWeight'],
-        'MergeRobertson' : ['process'],
-        'Tonemap' : ['process' , 'getGamma', 'setGamma'],
-        'TonemapDrago' : ['getSaturation', 'setSaturation', 'getBias', 'setBias', \
-                          'getSigmaColor', 'setSigmaColor', 'getSigmaSpace','setSigmaSpace'],
-        'TonemapMantiuk' : ['getScale', 'setScale', 'getSaturation', 'setSaturation'],
-        'TonemapReinhard' : ['getIntensity', 'setIntensity', 'getLightAdaptation', 'setLightAdaptation', \
-                             'getColorAdaptation', 'setColorAdaptation']
-        }
-
-aruco = {'': ['detectMarkers', 'drawDetectedMarkers', 'drawAxis', 'estimatePoseSingleMarkers', 'estimatePoseBoard', 'estimatePoseCharucoBoard', 'interpolateCornersCharuco', 'drawDetectedCornersCharuco'],
-        'aruco_Dictionary': ['get', 'drawMarker'],
-        'aruco_Board': ['create'],
-        'aruco_GridBoard': ['create', 'draw'],
-        'aruco_CharucoBoard': ['create', 'draw'],
-        }
-
-calib3d = {'': ['findHomography', 'calibrateCameraExtended', 'drawFrameAxes', 'estimateAffine2D', 'getDefaultNewCameraMatrix', 'initUndistortRectifyMap', 'Rodrigues']}
+calib3d = {'': ['findHomography']}
 
 def makeWhiteList(module_list):
     wl = {}
@@ -183,8 +156,13 @@ def makeWhiteList(module_list):
                 wl[k] = m[k]
     return wl
 
-white_list = makeWhiteList([core, imgproc, objdetect, video, dnn, features2d, photo, aruco, calib3d])
-
+if "OPENCV_JS_WHITELIST" in os.environ:
+    track = os.environ["OPENCV_JS_WHITELIST"]
+    with open(track, 'r') as json_file:
+        json_data = json.load(json_file)
+        white_list = makeWhiteList(json_data)
+else:
+    white_list = makeWhiteList([core, imgproc, objdetect, video, dnn, features2d, calib3d])
 # Features to be exported
 export_enums = False
 export_consts = True

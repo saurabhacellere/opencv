@@ -165,10 +165,9 @@ using namespace CV_CPU_OPTIMIZATION_HAL_NAMESPACE;
 #   undef CV_NEON
 #   undef CV_VSX
 #   undef CV_FP16
-#   undef CV_MSA
 #endif
 
-#if CV_SSE2 || CV_NEON || CV_VSX || CV_MSA || CV_WASM_SIMD
+#if CV_SSE2 || CV_NEON || CV_VSX
 #define CV__SIMD_FORWARD 128
 #include "opencv2/core/hal/intrin_forward.hpp"
 #endif
@@ -185,13 +184,6 @@ using namespace CV_CPU_OPTIMIZATION_HAL_NAMESPACE;
 #elif CV_VSX
 
 #include "opencv2/core/hal/intrin_vsx.hpp"
-
-#elif CV_MSA
-
-#include "opencv2/core/hal/intrin_msa.hpp"
-
-#elif CV_WASM_SIMD
-#include "opencv2/core/hal/intrin_wasm.hpp"
 
 #else
 
@@ -276,6 +268,7 @@ CV_CPU_OPTIMIZATION_HAL_NAMESPACE_BEGIN
 
 #define CV_INTRIN_DEFINE_WIDE_INTRIN(typ, vtyp, short_typ, prefix, loadsfx) \
     inline vtyp vx_setall_##short_typ(typ v) { return prefix##_setall_##short_typ(v); } \
+    inline vtyp vx_setall(typ v) { return prefix##_setall_##short_typ(v); } \
     inline vtyp vx_setzero_##short_typ() { return prefix##_setzero_##short_typ(); } \
     inline vtyp vx_##loadsfx(const typ* ptr) { return prefix##_##loadsfx(ptr); } \
     inline vtyp vx_##loadsfx##_aligned(const typ* ptr) { return prefix##_##loadsfx##_aligned(ptr); } \

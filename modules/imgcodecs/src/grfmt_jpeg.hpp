@@ -53,38 +53,37 @@
 namespace cv
 {
 
-class JpegDecoder CV_FINAL : public BaseImageDecoder
+class JpegDecoder : public ImageDecoder::Impl
 {
 public:
 
     JpegDecoder();
     virtual ~JpegDecoder();
 
-    bool  readData( Mat& img ) CV_OVERRIDE;
-    bool  readHeader() CV_OVERRIDE;
+    int orientation() const { return m_orientation; }
+
+    bool  readData( Mat& img );
+    bool  readHeader();
     void  close();
 
-    ImageDecoder newDecoder() const CV_OVERRIDE;
+    Ptr<ImageDecoder::Impl> newDecoder() const;
 
 protected:
 
     FILE* m_f;
     void* m_state;
-
-private:
-    JpegDecoder(const JpegDecoder &); // copy disabled
-    JpegDecoder& operator=(const JpegDecoder &); // assign disabled
+    int m_orientation;
 };
 
 
-class JpegEncoder CV_FINAL : public BaseImageEncoder
+class JpegEncoder : public ImageEncoder::Impl
 {
 public:
     JpegEncoder();
     virtual ~JpegEncoder();
 
-    bool  write( const Mat& img, const std::vector<int>& params ) CV_OVERRIDE;
-    ImageEncoder newEncoder() const CV_OVERRIDE;
+    bool  write( const Mat& img, InputArray params );
+    Ptr<ImageEncoder::Impl> newEncoder() const;
 };
 
 }

@@ -46,23 +46,18 @@
 //
 //M*/
 
-#include "precomp.hpp"
-
-
-#ifdef HAVE_IMGCODEC_PXM
 
 #include <cerrno>
 
+#include "precomp.hpp"
 #include "utils.hpp"
 #include "grfmt_pam.hpp"
-
-namespace cv {
 
 /* the PAM related fields */
 #define MAX_PAM_HEADER_IDENITFIER_LENGTH 8
 #define MAX_PAM_HEADER_VALUE_LENGTH 255
 
-/* PAM header fields */
+/* PAM header fileds */
 typedef enum {
     PAM_HEADER_NONE,
     PAM_HEADER_COMMENT,
@@ -132,12 +127,12 @@ rgb_convert (void *src, void *target, int width, int target_channels, int target
         switch (target_depth) {
             case CV_8U:
                 icvCvt_RGB2BGR_8u_C3R( (uchar*) src, 0, (uchar*) target, 0,
-                    Size(width,1) );
+                    cvSize(width,1) );
                 ret = true;
                 break;
             case CV_16U:
                 icvCvt_RGB2BGR_16u_C3R( (ushort *)src, 0, (ushort *)target, 0,
-                    Size(width,1) );
+                    cvSize(width,1) );
                 ret = true;
                 break;
             default:
@@ -147,12 +142,12 @@ rgb_convert (void *src, void *target, int width, int target_channels, int target
         switch (target_depth) {
             case CV_8U:
                 icvCvt_BGR2Gray_8u_C3C1R( (uchar*) src, 0, (uchar*) target, 0,
-                    Size(width,1), 2 );
+                    cvSize(width,1), 2 );
                 ret = true;
                 break;
             case CV_16U:
                 icvCvt_BGRA2Gray_16u_CnC1R( (ushort *)src, 0, (ushort *)target, 0,
-                    Size(width,1), 3, 2 );
+                    cvSize(width,1), 3, 2 );
                 ret = true;
                 break;
             default:
@@ -189,7 +184,7 @@ basic_conversion (void *src, const struct channel_layout *layout, int src_sampe_
                     }
                     break;
                 default:
-                    CV_Error(Error::StsInternal, "");
+                    assert (0);
             }
             break;
         }
@@ -210,24 +205,24 @@ basic_conversion (void *src, const struct channel_layout *layout, int src_sampe_
                     }
                     break;
                 default:
-                    CV_Error(Error::StsInternal, "");
+                    assert (0);
             }
             break;
         }
         default:
-            CV_Error(Error::StsInternal, "");
+            assert (0);
     }
 }
 
 
-static
-bool ReadPAMHeaderLine(
-        cv::RLByteStream& strm,
-        CV_OUT PamHeaderFieldType &fieldtype,
-        CV_OUT char value[MAX_PAM_HEADER_VALUE_LENGTH+1])
+static bool ReadPAMHeaderLine (cv::RLByteStream& strm,
+                PamHeaderFieldType &fieldtype,
+                char value[MAX_PAM_HEADER_VALUE_LENGTH+1])
 {
-    int code;
-    char ident[MAX_PAM_HEADER_IDENITFIER_LENGTH+1] = {};
+    int code, pos;
+    bool ident_found = false;
+    uint i;
+    char ident[MAX_PAM_HEADER_IDENITFIER_LENGTH+1] = { 0 };
 
     do {
         code = strm.getByte();
@@ -246,95 +241,82 @@ bool ReadPAMHeaderLine(
         return true;
     }
 
-    int ident_sz = 0;
-    for (; ident_sz < MAX_PAM_HEADER_IDENITFIER_LENGTH; ident_sz++)
-    {
-        if (isspace(code))
+    /* nul-ify buffers before writing to them */
+    memset (ident, '\0', sizeof(char) * MAX_PAM_HEADER_IDENITFIER_LENGTH);
+    for (i=0; i<MAX_PAM_HEADER_IDENITFIER_LENGTH; i++) {
+        if (!isspace(code))
+            ident[i] = (char) code;
+        else
             break;
-        ident[ident_sz] = (char)code;
         code = strm.getByte();
     }
-    CV_DbgAssert(ident_sz <= MAX_PAM_HEADER_IDENITFIER_LENGTH);
-    ident[ident_sz] = 0;
 
     /* we may have filled the buffer and still have data */
     if (!isspace(code))
         return false;
 
-    bool ident_found = false;
-    for (uint i = 0; i < PAM_FIELDS_NO; i++)
-    {
-        if (0 == strncmp(fields[i].identifier, ident, std::min(ident_sz, MAX_PAM_HEADER_IDENITFIER_LENGTH) + 1))
-        {
+    for (i=0; i<PAM_FIELDS_NO; i++) {
+        if (strncmp(fields[i].identifier, ident, MAX_PAM_HEADER_IDENITFIER_LENGTH+1) == 0) {
             fieldtype = fields[i].type;
             ident_found = true;
-            break;
         }
     }
 
     if (!ident_found)
         return false;
 
-    memset(value, 0, sizeof(char) * (MAX_PAM_HEADER_VALUE_LENGTH + 1));
+    memset (value, '\0', sizeof(char) * MAX_PAM_HEADER_VALUE_LENGTH);
     /* we may have an identifier that has no value */
     if (code == '\n' || code == '\r')
         return true;
 
     do {
         code = strm.getByte();
-    } while (isspace(code));
+    } while ( isspace(code) );
+
+
 
     /* read identifier value */
-    int value_sz = 0;
-    for (; value_sz < MAX_PAM_HEADER_VALUE_LENGTH; value_sz++)
-    {
-        if (code == '\n' || code == '\r')
+    for (i=0; i<MAX_PAM_HEADER_VALUE_LENGTH; i++) {
+        if (code != '\n' && code != '\r') {
+            value[i] = (char) code;
+        } else if (code != '\n' || code != '\r')
             break;
-        value[value_sz] = (char)code;
         code = strm.getByte();
     }
-    CV_DbgAssert(value_sz <= MAX_PAM_HEADER_VALUE_LENGTH);
-    value[value_sz] = 0;
-
-    int pos = value_sz;
+    pos = i;
 
     /* should be terminated */
     if (code != '\n' && code != '\r')
         return false;
 
     /* remove trailing white spaces */
-    while (--pos >= 0 && isspace(value[pos]))
-        value[pos] = 0;
+    while (pos >= 0 && isspace(value[pos]))
+        value[pos--] = '\0';
 
     return true;
 }
 
-static int ParseInt(const char *str, int len)
+static bool ParseNumber (char *str, int *retval)
 {
-    CV_Assert(len > 0);
+  char *endptr;
+  long lval = strtol (str, &endptr, 0);
 
-    int pos = 0;
-    bool is_negative = false;
-    if (str[0] == '-')
-    {
-        is_negative = true;
-        pos++;
-        CV_Assert(isdigit(str[pos]));
-    }
-    uint64_t number = 0;
-    while (pos < len && isdigit(str[pos]))
-    {
-        char ch = str[pos];
-        number = (number * 10) + (uint64_t)((int)ch - (int)'0');
-        CV_Assert(number < INT_MAX);
-        pos++;
-    }
-    if (pos < len)
-        CV_Assert(str[pos] == 0);
-    return (is_negative) ? -(int)number : (int)number;
+  if ((errno == ERANGE && (lval == LONG_MAX || lval == LONG_MIN))
+        || (errno != 0 && lval == 0)) {
+    return false;
+  }
+  if (endptr == str) {
+    return false;
+  }
+
+  *retval = (int) lval;
+
+  return true;
 }
 
-
+namespace cv
+{
 
 PAMDecoder::PAMDecoder()
 {
@@ -342,6 +324,7 @@ PAMDecoder::PAMDecoder()
     m_buf_supported = true;
     bit_mode = false;
     selected_fmt = CV_IMWRITE_PAM_FORMAT_NULL;
+    m_description = "PAM";
     m_maxval = 0;
     m_channels = 0;
     m_sampledepth = 0;
@@ -365,17 +348,26 @@ bool PAMDecoder::checkSignature( const String& signature ) const
            isspace(signature[2]);
 }
 
-ImageDecoder PAMDecoder::newDecoder() const
+Ptr<ImageDecoder::Impl> PAMDecoder::newDecoder() const
 {
     return makePtr<PAMDecoder>();
 }
 
-bool PAMDecoder::readHeader()
+struct parsed_fields
+{
+    bool endhdr, height, width, depth, maxval;
+};
+
+#define HEADER_READ_CORRECT(pf) (pf.endhdr && pf.height && pf.width \
+    && pf.depth && pf.maxval)
+
+
+bool  PAMDecoder::readHeader()
 {
     PamHeaderFieldType fieldtype = PAM_HEADER_NONE;
     char value[MAX_PAM_HEADER_VALUE_LENGTH+1];
     int byte;
-
+    struct parsed_fields flds;
     if( !m_buf.empty() )
     {
         if( !m_strm.open(m_buf) )
@@ -383,7 +375,6 @@ bool PAMDecoder::readHeader()
     }
     else if( !m_strm.open( m_filename ))
         return false;
-
     try
     {
         byte = m_strm.getByte();
@@ -398,72 +389,70 @@ bool PAMDecoder::readHeader()
         if (byte != '\n' && byte != '\r')
             throw RBS_BAD_HEADER;
 
-        bool flds_endhdr = false, flds_height = false, flds_width = false, flds_depth = false, flds_maxval = false;
-
+        uint i;
+        memset (&flds, 0x00, sizeof (struct parsed_fields));
         do {
             if (!ReadPAMHeaderLine(m_strm, fieldtype, value))
                 throw RBS_BAD_HEADER;
-            switch (fieldtype)
-            {
+            switch (fieldtype) {
                 case PAM_HEADER_NONE:
                 case PAM_HEADER_COMMENT:
                     continue;
                 case PAM_HEADER_ENDHDR:
-                    flds_endhdr = true;
+                    flds.endhdr = true;
                     break;
                 case PAM_HEADER_HEIGHT:
-                    if (flds_height)
+                    if (flds.height)
                         throw RBS_BAD_HEADER;
-                    m_height = ParseInt(value, MAX_PAM_HEADER_VALUE_LENGTH);
-                    flds_height = true;
+                    if (!ParseNumber (value, &m_height))
+                        throw RBS_BAD_HEADER;
+                    flds.height = true;
                     break;
                 case PAM_HEADER_WIDTH:
-                    if (flds_width)
+                    if (flds.width)
                         throw RBS_BAD_HEADER;
-                    m_width = ParseInt(value, MAX_PAM_HEADER_VALUE_LENGTH);
-                    flds_width = true;
+                    if (!ParseNumber (value, &m_width))
+                        throw RBS_BAD_HEADER;
+                    flds.width = true;
                     break;
                 case PAM_HEADER_DEPTH:
-                    if (flds_depth)
+                    if (flds.depth)
                         throw RBS_BAD_HEADER;
-                    m_channels = ParseInt(value, MAX_PAM_HEADER_VALUE_LENGTH);
-                    flds_depth = true;
+                    if (!ParseNumber (value, &m_channels))
+                        throw RBS_BAD_HEADER;
+                    flds.depth = true;
                     break;
                 case PAM_HEADER_MAXVAL:
-                    if (flds_maxval)
+                    if (flds.maxval)
                         throw RBS_BAD_HEADER;
-                    m_maxval = ParseInt(value, MAX_PAM_HEADER_VALUE_LENGTH);
+                    if (!ParseNumber (value, &m_maxval))
+                        throw RBS_BAD_HEADER;
                     if ( m_maxval > 65535 )
                         throw RBS_BAD_HEADER;
-                    m_sampledepth = (m_maxval > 255) ? CV_16U : CV_8U;
+                    if ( m_maxval > 255 ) {
+                        m_sampledepth = CV_16U;
+                    }
+                    else
+                        m_sampledepth = CV_8U;
                     if (m_maxval == 1)
                         bit_mode = true;
-                    flds_maxval = true;
+                    flds.maxval = true;
                     break;
                 case PAM_HEADER_TUPLTYPE:
-                {
-                    bool format_found = false;
-                    for (uint i=0; i<PAM_FORMATS_NO; i++)
-                    {
-                        if (0 == strncmp(formats[i].name, value, MAX_PAM_HEADER_VALUE_LENGTH+1))
-                        {
+                    for (i=0; i<PAM_FORMATS_NO; i++) {
+                        if (strncmp(formats[i].name,
+                                value, MAX_PAM_HEADER_VALUE_LENGTH+1) == 0) {
                             selected_fmt = formats[i].fmt;
-                            format_found = true;
-                            break;
                         }
                     }
-                    CV_Assert(format_found);
                     break;
-                }
                 default:
                     throw RBS_BAD_HEADER;
             }
         } while (fieldtype != PAM_HEADER_ENDHDR);
 
-        if (flds_endhdr && flds_height && flds_width && flds_depth && flds_maxval)
-        {
-            if (selected_fmt == CV_IMWRITE_PAM_FORMAT_NULL)
-            {
+        if (HEADER_READ_CORRECT(flds)) {
+            if (selected_fmt == CV_IMWRITE_PAM_FORMAT_NULL) {
                 if (m_channels == 1 && m_maxval == 1)
                     selected_fmt = CV_IMWRITE_PAM_FORMAT_BLACKANDWHITE;
                 else if (m_channels == 1 && m_maxval < 256)
@@ -476,38 +465,42 @@ bool PAMDecoder::readHeader()
 
             return true;
         }
-
-        // failed
-        m_offset = -1;
-        m_width = m_height = -1;
-        m_strm.close();
-        return false;
-    }
-    catch (...)
+    } catch(...)
     {
-        m_offset = -1;
-        m_width = m_height = -1;
-        m_strm.close();
-        throw;
     }
+
+    m_offset = -1;
+    m_width = m_height = -1;
+    m_strm.close();
+    return false;
 }
 
 
-bool PAMDecoder::readData(Mat& img)
+bool  PAMDecoder::readData( Mat& img )
 {
     uchar* data = img.ptr();
-    const int target_channels = img.channels();
-    size_t imp_stride = img.step;
-    const int sample_depth = CV_ELEM_SIZE1(m_type);
-    const int src_elems_per_row = m_width*m_channels;
-    const int src_stride = src_elems_per_row*sample_depth;
-    PaletteEntry palette[256] = {};
+    int target_channels = img.channels();
+    int imp_stride = (int)img.step;
+    int sample_depth = CV_ELEM_SIZE1(m_type);
+    int src_elems_per_row = m_width*m_channels;
+    int src_stride = src_elems_per_row*sample_depth;
+    int x, y;
+    bool res = false, funcout;
+    PaletteEntry palette[256];
     const struct pam_format *fmt = NULL;
-    struct channel_layout layout = { 0, 0, 0, 0 }; // normalized to 1-channel grey format
+    struct channel_layout layout;
+
+    int dst_type = CV_MAKETYPE( img.depth(), target_channels );
+    if( !checkDest( img, dst_type ) )
+    {
+        return false;
+    }
 
     /* setting buffer to max data size so scaling up is possible */
     AutoBuffer<uchar> _src(src_elems_per_row * 2);
-    uchar* src = _src.data();
+    uchar* src = _src;
+    AutoBuffer<uchar> _gray_palette;
+    uchar* gray_palette = _gray_palette;
 
     if( m_offset < 0 || !m_strm.isOpened())
         return false;
@@ -520,21 +513,24 @@ bool PAMDecoder::readData(Mat& img)
             layout.bchan = 0;
             layout.gchan = 1;
             layout.rchan = 2;
-        }
+        } else
+            layout.bchan = layout.gchan = layout.rchan = 0;
+        layout.graychan = 0;
     }
 
+    try
     {
         m_strm.setPos( m_offset );
 
         /* the case where data fits the opencv matrix */
         if (m_sampledepth == img.depth() && target_channels == m_channels && !bit_mode) {
-            /* special case for 16bit images with wrong endianness */
+            /* special case for 16bit images with wrong endianess */
             if (m_sampledepth == CV_16U && !isBigEndian())
             {
-                for (int y = 0; y < m_height; y++, data += imp_stride)
+                for (y = 0; y < m_height; y++, data += imp_stride )
                 {
                     m_strm.getBytes( src, src_stride );
-                    for (int x = 0; x < src_elems_per_row; x++)
+                    for( x = 0; x < src_elems_per_row; x++ )
                     {
                         uchar v = src[x * 2];
                         data[x * 2] = src[x * 2 + 1];
@@ -552,8 +548,11 @@ bool PAMDecoder::readData(Mat& img)
             if (bit_mode) {
                 if( target_channels == 1 )
                 {
-                    uchar gray_palette[2] = {0, 255};
-                    for (int y = 0; y < m_height; y++, data += imp_stride)
+                    _gray_palette.allocate(2);
+                    gray_palette = _gray_palette;
+                    gray_palette[0] = 0;
+                    gray_palette[1] = 255;
+                    for( y = 0; y < m_height; y++, data += imp_stride )
                     {
                         m_strm.getBytes( src, src_stride );
                         FillGrayRow1( data, src, m_width, gray_palette );
@@ -561,21 +560,21 @@ bool PAMDecoder::readData(Mat& img)
                 } else if ( target_channels == 3 )
                 {
                     FillGrayPalette( palette, 1 , false );
-                    for (int y = 0; y < m_height; y++, data += imp_stride)
+                    for( y = 0; y < m_height; y++, data += imp_stride )
                     {
                         m_strm.getBytes( src, src_stride );
                         FillColorRow1( data, src, m_width, palette );
                     }
                 }
             } else {
-                for (int y = 0; y < m_height; y++, data += imp_stride)
+                for (y = 0; y < m_height; y++, data += imp_stride )
                 {
                     m_strm.getBytes( src, src_stride );
 
-                    /* endianness correction */
+                    /* endianess correction */
                     if( m_sampledepth == CV_16U && !isBigEndian() )
                     {
-                        for (int x = 0; x < src_elems_per_row; x++)
+                        for( x = 0; x < src_elems_per_row; x++ )
                         {
                             uchar v = src[x * 2];
                             src[x * 2] = src[x * 2 + 1];
@@ -586,7 +585,7 @@ bool PAMDecoder::readData(Mat& img)
                     /* scale down */
                     if( img.depth() == CV_8U && m_sampledepth == CV_16U )
                     {
-                        for (int x = 0; x < src_elems_per_row; x++)
+                        for( x = 0; x < src_elems_per_row; x++ )
                         {
                             int v = ((ushort *)src)[x];
                             src[x] = (uchar)(v >> 8);
@@ -599,7 +598,7 @@ bool PAMDecoder::readData(Mat& img)
                     }
                     /* perform correct conversion based on format */
                     else if (fmt) {
-                        bool funcout = false;
+                        funcout = false;
                         if (fmt->cvt_func)
                             funcout = fmt->cvt_func (src, data, m_width, target_channels,
                                 img.depth());
@@ -618,8 +617,13 @@ bool PAMDecoder::readData(Mat& img)
                 }
             }
         }
+
+        res = true;
+    } catch(...)
+    {
     }
-    return true;
+
+    return res;
 }
 
 
@@ -637,7 +641,7 @@ PAMEncoder::~PAMEncoder()
 }
 
 
-ImageEncoder PAMEncoder::newEncoder() const
+Ptr<ImageEncoder::Impl> PAMEncoder::newEncoder() const
 {
     return makePtr<PAMEncoder>();
 }
@@ -649,9 +653,9 @@ bool PAMEncoder::isFormatSupported( int depth ) const
 }
 
 
-bool PAMEncoder::write( const Mat& img, const std::vector<int>& params )
+bool PAMEncoder::write( const Mat& img, InputArray _params )
 {
-
+    Mat_<int> params(_params.getMat());
     WLByteStream strm;
 
     int width = img.cols, height = img.rows;
@@ -661,11 +665,11 @@ bool PAMEncoder::write( const Mat& img, const std::vector<int>& params )
     int x, y, tmp, bufsize = 256;
 
     /* parse save file type */
-    for( size_t i = 0; i < params.size(); i += 2 )
-        if( params[i] == CV_IMWRITE_PAM_TUPLETYPE ) {
-            if ( params[i+1] > CV_IMWRITE_PAM_FORMAT_NULL &&
-                 params[i+1] < (int) PAM_FORMATS_NO)
-                fmt = &formats[params[i+1]];
+    for( MatIterator_<int> it = params.begin(); it + 1 < params.end(); it += 2 )
+        if( *it == CV_IMWRITE_PAM_TUPLETYPE ) {
+            if ( *(it+1) > CV_IMWRITE_PAM_FORMAT_NULL &&
+                 *(it+1) < (int) PAM_FORMATS_NO)
+                fmt = &formats[*(it+1)];
         }
 
     if( m_buf )
@@ -683,7 +687,7 @@ bool PAMEncoder::write( const Mat& img, const std::vector<int>& params )
         bufsize = tmp;
 
     AutoBuffer<char> _buffer(bufsize);
-    char* buffer = _buffer.data();
+    char* buffer = _buffer;
 
     /* write header */
     tmp = 0;
@@ -694,14 +698,14 @@ bool PAMEncoder::write( const Mat& img, const std::vector<int>& params )
     tmp += sprintf( buffer + tmp, "MAXVAL %d\n", (1 << img.elemSize1()*8) - 1);
     if (fmt)
         tmp += sprintf( buffer + tmp, "TUPLTYPE %s\n", fmt->name );
-    sprintf( buffer + tmp, "ENDHDR\n" );
+    tmp += sprintf( buffer + tmp, "ENDHDR\n" );
 
     strm.putBytes( buffer, (int)strlen(buffer) );
     /* write data */
     if (img.depth() == CV_8U)
         strm.putBytes( data, stride*height );
     else if (img.depth() == CV_16U) {
-        /* fix endianness */
+        /* fix endianess */
         if (!isBigEndian()) {
             for( y = 0; y < height; y++ ) {
                 memcpy( buffer, img.ptr(y), stride );
@@ -716,12 +720,10 @@ bool PAMEncoder::write( const Mat& img, const std::vector<int>& params )
         } else
             strm.putBytes( data, stride*height );
     } else
-        CV_Error(Error::StsInternal, "");
+        assert (0);
 
     strm.close();
     return true;
 }
 
 }
-
-#endif

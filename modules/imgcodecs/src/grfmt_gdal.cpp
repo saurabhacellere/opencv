@@ -78,7 +78,7 @@ int  gdalPaletteInterpretation2OpenCV( GDALPaletteInterp const& paletteInterp, G
 
         /// RGB
         case GPI_RGB:
-            if( gdalType == GDT_Byte    ){ return CV_8UC3;  }
+            if( gdalType == GDT_Byte    ){ return CV_8UC1;  }
             if( gdalType == GDT_UInt16  ){ return CV_16UC3; }
             if( gdalType == GDT_Int16   ){ return CV_16SC3; }
             if( gdalType == GDT_UInt32  ){ return CV_32SC3; }
@@ -104,38 +104,65 @@ int gdal2opencv( const GDALDataType& gdalType, const int& channels ){
 
         /// UInt8
         case GDT_Byte:
-            return CV_8UC(channels);
+            if( channels == 1 ){ return CV_8UC1; }
+            if( channels == 3 ){ return CV_8UC3; }
+            if( channels == 4 ){ return CV_8UC4; }
+            else { return CV_8UC(channels); }
+            return -1;
 
         /// UInt16
         case GDT_UInt16:
-            return CV_16UC(channels);
+            if( channels == 1 ){ return CV_16UC1; }
+            if( channels == 3 ){ return CV_16UC3; }
+            if( channels == 4 ){ return CV_16UC4; }
+            else { return CV_16UC(channels); }
+            return -1;
 
         /// Int16
         case GDT_Int16:
-            return CV_16SC(channels);
+            if( channels == 1 ){ return CV_16SC1; }
+            if( channels == 3 ){ return CV_16SC3; }
+            if( channels == 4 ){ return CV_16SC4; }
+            else { return CV_16SC(channels); }
+            return -1;
 
         /// UInt32
         case GDT_UInt32:
         case GDT_Int32:
-            return CV_32SC(channels);
+            if( channels == 1 ){ return CV_32SC1; }
+            if( channels == 3 ){ return CV_32SC3; }
+            if( channels == 4 ){ return CV_32SC4; }
+            else { return CV_32SC(channels); }
+            return -1;
 
         case GDT_Float32:
-            return CV_32FC(channels);
+            if( channels == 1 ){ return CV_32FC1; }
+            if( channels == 3 ){ return CV_32FC3; }
+            if( channels == 4 ){ return CV_32FC4; }
+            else { return CV_32FC(channels); }
+            return -1;
 
         case GDT_Float64:
-            return CV_64FC(channels);
+            if( channels == 1 ){ return CV_64FC1; }
+            if( channels == 3 ){ return CV_64FC3; }
+            if( channels == 4 ){ return CV_64FC4; }
+            else { return CV_64FC(channels); }
+            return -1;
 
         default:
             std::cout << "Unknown GDAL Data Type" << std::endl;
             std::cout << "Type: " << GDALGetDataTypeName(gdalType) << std::endl;
             return -1;
     }
+
+    return -1;
 }
 
 /**
  * GDAL Decoder Constructor
 */
 GdalDecoder::GdalDecoder(){
+
 
     // set a dummy signature
     m_signature="0";
@@ -148,12 +175,14 @@ GdalDecoder::GdalDecoder(){
 
     m_driver = NULL;
     m_dataset = NULL;
+    m_description = "GDAL";
 }
 
 /**
  * GDAL Decoder Destructor
 */
 GdalDecoder::~GdalDecoder(){
+
 
     if( m_dataset != NULL ){
        close();
@@ -256,35 +285,35 @@ void write_pixel( const double& pixelValue,
 
     // input: 3 channel, output: 3 channel
     else if( gdalChannels == 3 && image.channels() == 3 ){
-        if( image.depth() == CV_8U ){  (*image.ptr<Vec3b>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_16U ){  (*image.ptr<Vec3s>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_16S ){  (*image.ptr<Vec3s>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_32S ){  (*image.ptr<Vec3i>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_32F ){  (*image.ptr<Vec3f>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_64F ){  (*image.ptr<Vec3d>(row,col))[channel] = newValue;  }
+        if( image.depth() == CV_8U ){  image.at<Vec3b>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_16U ){  image.ptr<Vec3s>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_16S ){  image.ptr<Vec3s>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_32S ){  image.ptr<Vec3i>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_32F ){  image.ptr<Vec3f>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_64F ){  image.ptr<Vec3d>(row,col)[channel] = newValue;  }
         else{ throw std::runtime_error("Unknown image depth, gdal: 3, image: 3"); }
     }
 
     // input: 4 channel, output: 3 channel
     else if( gdalChannels == 4 && image.channels() == 3 ){
         if( channel >= 4 ){ return; }
-        else if( image.depth() == CV_8U  && channel < 4 ){  (*image.ptr<Vec3b>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_16U && channel < 4 ){  (*image.ptr<Vec3s>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_16S && channel < 4 ){  (*image.ptr<Vec3s>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_32S && channel < 4 ){  (*image.ptr<Vec3i>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_32F && channel < 4 ){  (*image.ptr<Vec3f>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_64F && channel < 4 ){  (*image.ptr<Vec3d>(row,col))[channel] = newValue;  }
+        else if( image.depth() == CV_8U  && channel < 4 ){  image.ptr<Vec3b>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_16U && channel < 4 ){  image.ptr<Vec3s>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_16S && channel < 4 ){  image.ptr<Vec3s>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_32S && channel < 4 ){  image.ptr<Vec3i>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_32F && channel < 4 ){  image.ptr<Vec3f>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_64F && channel < 4 ){  image.ptr<Vec3d>(row,col)[channel] = newValue;  }
         else{ throw std::runtime_error("Unknown image depth, gdal: 4, image: 3"); }
     }
 
     // input: 4 channel, output: 4 channel
     else if( gdalChannels == 4 && image.channels() == 4 ){
-        if( image.depth() == CV_8U ){  (*image.ptr<Vec4b>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_16U ){  (*image.ptr<Vec4s>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_16S ){  (*image.ptr<Vec4s>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_32S ){  (*image.ptr<Vec4i>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_32F ){  (*image.ptr<Vec4f>(row,col))[channel] = newValue;  }
-        else if( image.depth() == CV_64F ){  (*image.ptr<Vec4d>(row,col))[channel] = newValue;  }
+        if( image.depth() == CV_8U ){  image.at<Vec4b>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_16U ){  image.at<Vec4s>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_16S ){  image.at<Vec4s>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_32S ){  image.at<Vec4i>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_32F ){  image.at<Vec4f>(row,col)[channel] = newValue;  }
+        else if( image.depth() == CV_64F ){  image.at<Vec4d>(row,col)[channel] = newValue;  }
         else{ throw std::runtime_error("Unknown image depth, gdal: 4, image: 4"); }
     }
 
@@ -355,7 +384,10 @@ bool GdalDecoder::readData( Mat& img ){
 
 
     // make sure the image is the proper size
-    if( img.size() != Size(m_width, m_height) ){
+    if( img.size().height != m_height ){
+        return false;
+    }
+    if( img.size().width != m_width ){
         return false;
     }
 
@@ -366,6 +398,7 @@ bool GdalDecoder::readData( Mat& img ){
 
     // set the image to zero
     img = 0;
+
 
     // iterate over each raster band
     // note that OpenCV does bgr rather than rgb
@@ -388,30 +421,6 @@ bool GdalDecoder::readData( Mat& img ){
         // get the GDAL Band
         GDALRasterBand* band = m_dataset->GetRasterBand(c+1);
 
-        /* Map palette band and gray band to color index 0 and red, green,
-           blue, alpha bands to BGRA indexes. Note: ignoring HSL, CMY,
-           CMYK, and YCbCr color spaces, rather than converting them
-           to BGR. */
-        int color = 0;
-        switch (band->GetColorInterpretation()) {
-        case GCI_PaletteIndex:
-        case GCI_GrayIndex:
-        case GCI_BlueBand:
-            color = 0;
-            break;
-        case GCI_GreenBand:
-            color = 1;
-            break;
-        case GCI_RedBand:
-            color = 2;
-            break;
-        case GCI_AlphaBand:
-            color = 3;
-            break;
-        default:
-            CV_Error(cv::Error::StsError, "Invalid/unsupported mode");
-        }
-
         // make sure the image band has the same dimensions as the image
         if( band->GetXSize() != m_width || band->GetYSize() != m_height ){ return false; }
 
@@ -426,8 +435,7 @@ bool GdalDecoder::readData( Mat& img ){
         for( int y=0; y<nRows; y++ ){
 
             // get the entire row
-            CPLErr err = band->RasterIO( GF_Read, 0, y, nCols, 1, scanline, nCols, 1, GDT_Float64, 0, 0);
-            CV_Assert(err == CE_None);
+            band->RasterIO( GF_Read, 0, y, nCols, 1, scanline, nCols, 1, GDT_Float64, 0, 0);
 
             // set inside the image
             for( int x=0; x<nCols; x++ ){
@@ -435,16 +443,18 @@ bool GdalDecoder::readData( Mat& img ){
                 // set depending on image types
                 //   given boost, I would use enable_if to speed up.  Avoid for now.
                 if( hasColorTable == false ){
-                    write_pixel( scanline[x], gdalType, nChannels, img, y, x, color );
+                    write_pixel( scanline[x], gdalType, nChannels, img, y, x, c );
                 }
                 else{
-                    write_ctable_pixel( scanline[x], gdalType, gdalColorTable, img, y, x, color );
+                    write_ctable_pixel( scanline[x], gdalType, gdalColorTable, img, y, x, c );
                 }
             }
         }
 
         // delete our temp pointer
         delete [] scanline;
+
+
     }
 
     return true;
@@ -469,7 +479,7 @@ bool GdalDecoder::readHeader(){
         return false;
     }
 
-    //extract the driver information
+    //extract the driver infomation
     m_driver = m_dataset->GetDriver();
 
     // if the driver failed, then exit
@@ -544,7 +554,7 @@ void GdalDecoder::close(){
 /**
  * Create a new decoder
 */
-ImageDecoder GdalDecoder::newDecoder()const{
+Ptr<ImageDecoder::Impl> GdalDecoder::newDecoder()const{
     return makePtr<GdalDecoder>();
 }
 
@@ -553,6 +563,7 @@ ImageDecoder GdalDecoder::newDecoder()const{
 */
 bool GdalDecoder::checkSignature( const String& signature )const{
 
+
     // look for NITF
     std::string str(signature);
     if( str.substr(0,4).find("NITF") != std::string::npos ){
@@ -560,7 +571,7 @@ bool GdalDecoder::checkSignature( const String& signature )const{
     }
 
     // look for DTED
-    if( str.size() > 144 && str.substr(140,4) == "DTED" ){
+    if( str.substr(140,4) == "DTED" ){
         return true;
     }
 

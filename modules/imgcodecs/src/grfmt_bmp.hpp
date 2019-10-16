@@ -58,30 +58,24 @@ enum BmpCompression
 
 
 // Windows Bitmap reader
-class BmpDecoder CV_FINAL : public BaseImageDecoder
+class BmpDecoder : public ImageDecoder::Impl
 {
 public:
 
     BmpDecoder();
-    ~BmpDecoder() CV_OVERRIDE;
+    ~BmpDecoder();
 
-    bool  readData( Mat& img ) CV_OVERRIDE;
-    bool  readHeader() CV_OVERRIDE;
+    bool  readData( Mat& img );
+    bool  readHeader();
     void  close();
 
-    ImageDecoder newDecoder() const CV_OVERRIDE;
+    Ptr<ImageDecoder::Impl> newDecoder() const;
 
 protected:
 
-    enum Origin
-    {
-        ORIGIN_TL = 0,
-        ORIGIN_BL = 1
-    };
-
     RLByteStream    m_strm;
     PaletteEntry    m_palette[256];
-    Origin          m_origin;
+    int             m_origin;
     int             m_bpp;
     int             m_offset;
     BmpCompression  m_rle_code;
@@ -89,15 +83,15 @@ protected:
 
 
 // ... writer
-class BmpEncoder CV_FINAL : public BaseImageEncoder
+class BmpEncoder : public ImageEncoder::Impl
 {
 public:
     BmpEncoder();
-    ~BmpEncoder() CV_OVERRIDE;
+    ~BmpEncoder();
 
-    bool  write( const Mat& img, const std::vector<int>& params ) CV_OVERRIDE;
+    bool  write( const Mat& img, InputArray params );
 
-    ImageEncoder newEncoder() const CV_OVERRIDE;
+    Ptr<ImageEncoder::Impl> newEncoder() const;
 };
 
 }

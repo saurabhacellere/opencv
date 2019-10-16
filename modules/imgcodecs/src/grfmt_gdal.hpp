@@ -42,7 +42,7 @@
 #ifndef __GRFMT_GDAL_HPP__
 #define __GRFMT_GDAL_HPP__
 
-/// OpenCV FMT Base Type
+/// OpenCV FMT  Type
 #include "grfmt_base.hpp"
 
 /// Macro to make sure we specified GDAL in CMake
@@ -103,7 +103,7 @@ void write_ctable_pixel( const double& pixelValue,
 /**
  * Loader for GDAL
 */
-class GdalDecoder CV_FINAL : public BaseImageDecoder{
+class GdalDecoder : public ImageDecoder::Impl{
 
     public:
 
@@ -115,17 +115,17 @@ class GdalDecoder CV_FINAL : public BaseImageDecoder{
         /**
          * Destructor
         */
-        ~GdalDecoder() CV_OVERRIDE;
+        ~GdalDecoder();
 
         /**
          * Read image data
         */
-        bool readData( Mat& img ) CV_OVERRIDE;
+        bool readData( Mat& img );
 
         /**
          * Read the image header
         */
-        bool readHeader() CV_OVERRIDE;
+        bool readHeader();
 
         /**
          * Close the module
@@ -135,7 +135,7 @@ class GdalDecoder CV_FINAL : public BaseImageDecoder{
         /**
          * Create a new decoder
         */
-        ImageDecoder newDecoder() const CV_OVERRIDE;
+        Ptr<ImageDecoder::Impl> newDecoder() const;
 
         /**
          * Test the file signature
@@ -144,7 +144,7 @@ class GdalDecoder CV_FINAL : public BaseImageDecoder{
          * The reason is that GDAL tends to overlap with other image formats and it is probably
          * safer to use other formats first.
         */
-        virtual bool checkSignature( const String& signature ) const CV_OVERRIDE;
+        virtual bool checkSignature( const String& signature ) const;
 
     protected:
 

@@ -63,7 +63,7 @@ namespace cv
 //! Imread flags
 enum ImreadModes {
        IMREAD_UNCHANGED            = -1, //!< If set, return the loaded image as is (with alpha channel, otherwise it gets cropped).
-       IMREAD_GRAYSCALE            = 0,  //!< If set, always convert image to the single channel grayscale image (codec internal conversion).
+       IMREAD_GRAYSCALE            = 0,  //!< If set, always convert image to the single channel grayscale image.
        IMREAD_COLOR                = 1,  //!< If set, always convert image to the 3 channel BGR color image.
        IMREAD_ANYDEPTH             = 2,  //!< If set, return 16-bit/32-bit image when the input has the corresponding depth, otherwise convert it to 8-bit.
        IMREAD_ANYCOLOR             = 4,  //!< If set, the image is read in any possible color format.
@@ -89,20 +89,8 @@ enum ImwriteFlags {
        IMWRITE_PNG_STRATEGY        = 17, //!< One of cv::ImwritePNGFlags, default is IMWRITE_PNG_STRATEGY_RLE.
        IMWRITE_PNG_BILEVEL         = 18, //!< Binary level PNG, 0 or 1, default is 0.
        IMWRITE_PXM_BINARY          = 32, //!< For PPM, PGM, or PBM, it can be a binary format flag, 0 or 1. Default value is 1.
-       IMWRITE_EXR_TYPE            = (3 << 4) + 0, /* 48 */ //!< override EXR storage type (FLOAT (FP32) is default)
        IMWRITE_WEBP_QUALITY        = 64, //!< For WEBP, it can be a quality from 1 to 100 (the higher is the better). By default (without any parameter) and for quality above 100 the lossless compression is used.
        IMWRITE_PAM_TUPLETYPE       = 128,//!< For PAM, sets the TUPLETYPE field to the corresponding string value that is defined for the format
-       IMWRITE_TIFF_RESUNIT = 256,//!< For TIFF, use to specify which DPI resolution unit to set; see libtiff documentation for valid values
-       IMWRITE_TIFF_XDPI = 257,//!< For TIFF, use to specify the X direction DPI
-       IMWRITE_TIFF_YDPI = 258, //!< For TIFF, use to specify the Y direction DPI
-       IMWRITE_TIFF_COMPRESSION = 259, //!< For TIFF, use to specify the image compression scheme. See libtiff for integer constants corresponding to compression formats. Note, for images whose depth is CV_32F, only libtiff's SGILOG compression scheme is used. For other supported depths, the compression scheme can be specified by this flag; LZW compression is the default.
-       IMWRITE_JPEG2000_COMPRESSION_X1000 = 272 //!< For JPEG2000, use to specify the target compression rate (multiplied by 1000). The value can be from 0 to 1000. Default is 1000.
-     };
-
-enum ImwriteEXRTypeFlags {
-       /*IMWRITE_EXR_TYPE_UNIT = 0, //!< not supported */
-       IMWRITE_EXR_TYPE_HALF = 1,   //!< store as HALF (FP16)
-       IMWRITE_EXR_TYPE_FLOAT = 2   //!< store as FP32 (default)
      };
 
 //! Imwrite PNG specific flags used to tune the compression algorithm.
@@ -131,6 +119,175 @@ enum ImwritePAMFlags {
        IMWRITE_PAM_FORMAT_RGB_ALPHA = 5,
      };
 
+/**
+ * @brief Picture orientation which may be taken from EXIF
+ *      Orientation usually matters when the picture is taken by
+ *      smartphone or other camera with orientation sensor support
+ *      Corresponds to EXIF 2.3 Specification
+ */
+enum ImageOrientation
+{
+    IMAGE_ORIENTATION_TL = 1, ///< Horizontal (normal)
+    IMAGE_ORIENTATION_TR = 2, ///< Mirrored horizontal
+    IMAGE_ORIENTATION_BR = 3, ///< Rotate 180
+    IMAGE_ORIENTATION_BL = 4, ///< Mirrored vertical
+    IMAGE_ORIENTATION_LT = 5, ///< Mirrored horizontal & rotate 270 CW
+    IMAGE_ORIENTATION_RT = 6, ///< Rotate 90 CW
+    IMAGE_ORIENTATION_RB = 7, ///< Mirrored horizontal & rotate 90 CW
+    IMAGE_ORIENTATION_LB = 8  ///< Rotate 270 CW
+};
+
+/** @brief Decodes an image so that it can be rendered as pixels
+ *
+ * This class should not be constructed directly. Instead, use
+ * one of the findDecoder methods to create a new decoder.
+ *
+ * Once created, the decoder should have setSource called
+ * with the source of the image.
+ *
+ * Next, call readHeader() to load the image metadata. This
+ * populates the height/width/type fields.
+ *
+ * Finally, use readData() to decode the image into a
+ * Mat where the pixels should be stored
+ */
+class CV_EXPORTS ImageDecoder
+{
+public:
+    ImageDecoder();
+    ImageDecoder(const ImageDecoder& d);
+    ImageDecoder& operator = (const ImageDecoder& d);
+
+    /** @brief Create an ImageDecoder that can decode the contents pointed at by filename
+     * @param[in] filename File to search
+     *
+     * This method *does not* inspect the extension of the filename, only the contents
+     * in the file itself. So if image.jpg actually contains PNG data, then the
+     * appropriate PNG decoder will be returned when ImageDecoder("image.jpg") is called.
+     *
+     * @return Image decoder to parse image file.
+    */
+    ImageDecoder( const String& filename );
+
+    /** @brief Create an ImageDecoder that can decode the encoded contents of buf
+     * @param[in] buf vector of encoded bytes
+     *
+     * @return Image decoder to parse image file.
+    */
+    ImageDecoder( const Mat& buf );
+
+    ~ImageDecoder();
+
+    /** Read the image metadata from the decoder source.
+     * Call after setSource has been called
+     * Sets decoder width, height, type
+     * Returns true on success
+     */
+    bool readHeader();
+
+    /** Read the image data from the decoder source.
+     * Loads deserialized pixels into img, which should be large enough
+     * to store entire image.
+     * Returns true on success
+     */
+    bool readData( Mat& img );
+
+    /** Get image width. Only returns successfully after readHeader() has been called.
+     */
+    int width() const;
+
+    /** Get image height. Only returns successfully after readHeader() has been called.
+     */
+    int height() const;
+
+    /** Get image pixel data type. Only returns successfully after readHeader() has been called.
+     */
+    int type() const;
+
+    /** Get the image's orientation, as set by its metadata, if any
+     */
+    int orientation() const;
+
+    int setScale( const int& scale_denom );
+
+    /// Called after readData to advance to the next page, if any.
+    bool nextPage();
+
+    /* Get the description for this instance of ImageDecoder */
+    String getDescription() const;
+
+    bool empty() const;
+    operator bool() const;
+    bool operator!() const;
+
+    class Impl;
+    ImageDecoder(const String& filename, Ptr<Impl> i);
+    ImageDecoder(const Mat& buf, Ptr<Impl> i);
+
+protected:
+    Ptr<Impl> p;
+};
+
+/** @brief Encodes pixels into an image format
+ *
+ * This class should not be constructed directly. Instead, use
+ * findEncoder to construct an Encoder for a particular type of image.
+ */
+class CV_EXPORTS ImageEncoder
+{
+public:
+    ImageEncoder();
+    ImageEncoder(const ImageEncoder& d);
+    ImageEncoder& operator = (const ImageEncoder& d);
+
+    /** @brief Create an ImageEncoder that can encode pixels into a specific format
+     * @param[in] _ext hint for encoder type
+     * @param[in] filename where to save encoded image
+     *
+     * @return Image encoder to encode image file.
+    */
+    ImageEncoder( const String& _ext, const String& filename );
+
+    /** @brief Create an ImageEncoder that can encode pixels into a specific format
+     * @param[in] _ext hint for encoder type
+     * @param[in] buf where to save encoded image
+     *
+     * @return Image encoder to encode image file.
+    */
+    ImageEncoder( const String& _ext, Mat& buf );
+
+    ~ImageEncoder();
+
+    bool isFormatSupported( int depth ) const;
+
+    /** Write the pixels contained by img into the image destination.
+     * params accepts the same params as imwrite
+     */
+    bool write( const Mat& img, InputArray params );
+
+    /* Get the description for this instance of ImageEncoder */
+    String getDescription() const;
+
+    void throwOnEror() const;
+
+    bool empty() const;
+    operator bool() const;
+    bool operator!() const;
+
+    class Impl;
+    ImageEncoder(const String& filename, Ptr<Impl> i);
+    ImageEncoder(Mat& buf, Ptr<Impl> i);
+
+protected:
+    Ptr<Impl> p;
+};
+
+/** @brief Applies the orientation transform specified by orientation
+ * @param[in] orientation a valid orientation value
+ * @param[in] img a Mat containing an image to orient
+*/
+CV_EXPORTS_W void OrientationTransform(int orientation, Mat& img);
+
 /** @brief Loads an image from a file.
 
 @anchor imread
@@ -142,23 +299,21 @@ returns an empty matrix ( Mat::data==NULL ).
 Currently, the following file formats are supported:
 
 -   Windows bitmaps - \*.bmp, \*.dib (always supported)
--   JPEG files - \*.jpeg, \*.jpg, \*.jpe (see the *Note* section)
--   JPEG 2000 files - \*.jp2 (see the *Note* section)
--   Portable Network Graphics - \*.png (see the *Note* section)
--   WebP - \*.webp (see the *Note* section)
+-   JPEG files - \*.jpeg, \*.jpg, \*.jpe (see the *Notes* section)
+-   JPEG 2000 files - \*.jp2 (see the *Notes* section)
+-   Portable Network Graphics - \*.png (see the *Notes* section)
+-   WebP - \*.webp (see the *Notes* section)
 -   Portable image format - \*.pbm, \*.pgm, \*.ppm \*.pxm, \*.pnm (always supported)
--   PFM files - \*.pfm (see the *Note* section)
 -   Sun rasters - \*.sr, \*.ras (always supported)
--   TIFF files - \*.tiff, \*.tif (see the *Note* section)
--   OpenEXR Image files - \*.exr (see the *Note* section)
+-   TIFF files - \*.tiff, \*.tif (see the *Notes* section)
+-   OpenEXR Image files - \*.exr (see the *Notes* section)
 -   Radiance HDR - \*.hdr, \*.pic (always supported)
--   Raster and Vector geospatial data supported by GDAL (see the *Note* section)
+-   Raster and Vector geospatial data supported by Gdal (see the *Notes* section)
 
 @note
+
 -   The function determines the type of an image by the content, not by the file extension.
 -   In the case of color images, the decoded images will have the channels stored in **B G R** order.
--   When using IMREAD_GRAYSCALE, the codec's internal grayscale conversion will be used, if available.
-    Results may differ to the output of cvtColor()
 -   On Microsoft Windows\* OS and MacOSX\*, the codecs shipped with an OpenCV image (libjpeg,
     libpng, libtiff, and libjasper) are used by default. So, OpenCV can always read JPEGs, PNGs,
     and TIFFs. On MacOSX, there is also an option to use native MacOSX image readers. But beware
@@ -169,15 +324,11 @@ Currently, the following file formats are supported:
     files, for example, "libjpeg-dev", in Debian\* and Ubuntu\*) to get the codec support or turn
     on the OPENCV_BUILD_3RDPARTY_LIBS flag in CMake.
 -   In the case you set *WITH_GDAL* flag to true in CMake and @ref IMREAD_LOAD_GDAL to load the image,
-    then the [GDAL](http://www.gdal.org) driver will be used in order to decode the image, supporting
+    then [GDAL](http://www.gdal.org) driver will be used in order to decode the image by supporting
     the following formats: [Raster](http://www.gdal.org/formats_list.html),
     [Vector](http://www.gdal.org/ogr_formats.html).
 -   If EXIF information are embedded in the image file, the EXIF orientation will be taken into account
     and thus the image will be rotated accordingly except if the flag @ref IMREAD_IGNORE_ORIENTATION is passed.
--   Use the IMREAD_UNCHANGED flag to keep the floating point values from PFM image.
--   By default number of pixels must be less than 2^30. Limit can be set using system
-    variable OPENCV_IO_MAX_IMAGE_PIXELS
-
 @param filename Name of file to be loaded.
 @param flags Flag that can take values of cv::ImreadModes
 */
@@ -191,30 +342,65 @@ The function imreadmulti loads a multi-page image from the specified file into a
 @param mats A vector of Mat objects holding each page, if more than one.
 @sa cv::imread
 */
-CV_EXPORTS_W bool imreadmulti(const String& filename, CV_OUT std::vector<Mat>& mats, int flags = IMREAD_ANYCOLOR);
+CV_EXPORTS_W bool imreadmulti(const String& filename, std::vector<Mat>& mats, int flags = IMREAD_ANYCOLOR);
 
 /** @brief Saves an image to a specified file.
 
 The function imwrite saves the image to the specified file. The image format is chosen based on the
-filename extension (see cv::imread for the list of extensions). In general, only 8-bit
-single-channel or 3-channel (with 'BGR' channel order) images
-can be saved using this function, with these exceptions:
-
-- 16-bit unsigned (CV_16U) images can be saved in the case of PNG, JPEG 2000, and TIFF formats
-- 32-bit float (CV_32F) images can be saved in PFM, TIFF, OpenEXR, and Radiance HDR formats;
-  3-channel (CV_32FC3) TIFF images will be saved using the LogLuv high dynamic range encoding
-  (4 bytes per pixel)
-- PNG images with an alpha channel can be saved using this function. To do this, create
-8-bit (or 16-bit) 4-channel image BGRA, where the alpha channel goes last. Fully transparent pixels
-should have alpha set to 0, fully opaque pixels should have alpha set to 255/65535 (see the code sample below).
-
-If the format, depth or channel order is different, use
-Mat::convertTo and cv::cvtColor to convert it before saving. Or, use the universal FileStorage I/O
+filename extension (see cv::imread for the list of extensions). Only 8-bit (or 16-bit unsigned (CV_16U)
+in case of PNG, JPEG 2000, and TIFF) single-channel or 3-channel (with 'BGR' channel order) images
+can be saved using this function. If the format, depth or channel order is different, use
+Mat::convertTo , and cv::cvtColor to convert it before saving. Or, use the universal FileStorage I/O
 functions to save the image to XML or YAML format.
 
-The sample below shows how to create a BGRA image and save it to a PNG file. It also demonstrates how to set custom
-compression parameters:
-@include snippets/imgcodecs_imwrite.cpp
+It is possible to store PNG images with an alpha channel using this function. To do this, create
+8-bit (or 16-bit) 4-channel image BGRA, where the alpha channel goes last. Fully transparent pixels
+should have alpha set to 0, fully opaque pixels should have alpha set to 255/65535.
+
+The sample below shows how to create such a BGRA image and store to PNG file. It also demonstrates how to set custom
+compression parameters :
+@code
+    #include <opencv2/opencv.hpp>
+
+    using namespace cv;
+    using namespace std;
+
+    void createAlphaMat(Mat &mat)
+    {
+        CV_Assert(mat.channels() == 4);
+        for (int i = 0; i < mat.rows; ++i) {
+            for (int j = 0; j < mat.cols; ++j) {
+                Vec4b& bgra = mat.at<Vec4b>(i, j);
+                bgra[0] = UCHAR_MAX; // Blue
+                bgra[1] = saturate_cast<uchar>((float (mat.cols - j)) / ((float)mat.cols) * UCHAR_MAX); // Green
+                bgra[2] = saturate_cast<uchar>((float (mat.rows - i)) / ((float)mat.rows) * UCHAR_MAX); // Red
+                bgra[3] = saturate_cast<uchar>(0.5 * (bgra[1] + bgra[2])); // Alpha
+            }
+        }
+    }
+
+    int main(int argv, char **argc)
+    {
+        // Create mat with alpha channel
+        Mat mat(480, 640, CV_8UC4);
+        createAlphaMat(mat);
+
+        vector<int> compression_params;
+        compression_params.push_back(IMWRITE_PNG_COMPRESSION);
+        compression_params.push_back(9);
+
+        try {
+            imwrite("alpha.png", mat, compression_params);
+        }
+        catch (cv::Exception& ex) {
+            fprintf(stderr, "Exception converting image to PNG format: %s\n", ex.what());
+            return 1;
+        }
+
+        fprintf(stdout, "Saved PNG file with alpha data.\n");
+        return 0;
+    }
+@endcode
 @param filename Name of the file.
 @param img Image to be saved.
 @param params Format-specific parameters encoded as pairs (paramId_1, paramValue_1, paramId_2, paramValue_2, ... .) see cv::ImwriteFlags
@@ -256,19 +442,6 @@ result. See cv::imwrite for the list of supported formats and flags description.
 CV_EXPORTS_W bool imencode( const String& ext, InputArray img,
                             CV_OUT std::vector<uchar>& buf,
                             const std::vector<int>& params = std::vector<int>());
-
-/** @brief Returns true if the specified image can be decoded by OpenCV
-
-@param filename File name of the image
-*/
-CV_EXPORTS_W bool haveImageReader( const String& filename );
-
-/** @brief Returns true if an image with the specified filename can be encoded by OpenCV
-
- @param filename File name of the image
- */
-CV_EXPORTS_W bool haveImageWriter( const String& filename );
-
 
 //! @} imgcodecs
 

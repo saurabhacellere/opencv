@@ -48,20 +48,13 @@
 namespace cv
 {
 
-#define DECLARE_RBS_EXCEPTION(name) \
-class RBS_ ## name ## _Exception : public cv::Exception \
-{ \
-public: \
-    RBS_ ## name ## _Exception(int code_, const String& err_, const String& func_, const String& file_, int line_) : \
-        cv::Exception(code_, err_, func_, file_, line_) \
-    {} \
+enum
+{
+    RBS_THROW_EOS=-123,  // <end of stream> exception code
+    RBS_THROW_FORB=-124,  // <forrbidden huffman code> exception code
+    RBS_HUFF_FORB=2047,  // forrbidden huffman code "value"
+    RBS_BAD_HEADER=-125 // invalid header
 };
-DECLARE_RBS_EXCEPTION(THROW_EOS)
-#define RBS_THROW_EOS RBS_THROW_EOS_Exception(cv::Error::StsError, "Unexpected end of input stream", CV_Func, __FILE__, __LINE__)
-DECLARE_RBS_EXCEPTION(THROW_FORB)
-#define RBS_THROW_FORB RBS_THROW_FORB_Exception(cv::Error::StsError, "Forrbidden huffman code", CV_Func, __FILE__, __LINE__)
-DECLARE_RBS_EXCEPTION(BAD_HEADER)
-#define RBS_BAD_HEADER RBS_BAD_HEADER_Exception(cv::Error::StsError, "Invalid header", CV_Func, __FILE__, __LINE__)
 
 typedef unsigned long ulong;
 
@@ -131,7 +124,7 @@ public:
     virtual ~WBaseStream();
 
     virtual bool  open( const String& filename );
-    virtual bool  open( std::vector<uchar>& buf );
+    virtual bool  open( Mat& buf );
     virtual void  close();
     bool          isOpened();
     int           getPos();
@@ -145,7 +138,7 @@ protected:
     int     m_block_pos;
     FILE*   m_file;
     bool    m_is_opened;
-    std::vector<uchar>* m_buf;
+    Mat* m_buf;
 
     virtual void  writeBlock();
     virtual void  release();

@@ -226,10 +226,7 @@ INSTANTIATE_TEST_CASE_P(ThresholdTestFluid, ThresholdTest,
                                 Values(CORE_FLUID),
                                 Values(cv::THRESH_BINARY, cv::THRESH_BINARY_INV,
                                        cv::THRESH_TRUNC,
-                                       cv::THRESH_TOZERO, cv::THRESH_TOZERO_INV),
-                                Values(cv::Scalar(0, 0, 0, 0),
-                                       cv::Scalar(100, 100, 100, 100),
-                                       cv::Scalar(255, 255, 255, 255))));
+                                       cv::THRESH_TOZERO, cv::THRESH_TOZERO_INV)));
 
 INSTANTIATE_TEST_CASE_P(InRangeTestFluid, InRangeTest,
                         Combine(Values(CV_8UC3, CV_8UC1, CV_16UC1, CV_16SC1, CV_32FC1),
@@ -260,29 +257,6 @@ INSTANTIATE_TEST_CASE_P(ResizeTestFluid, ResizeTest,
 INSTANTIATE_TEST_CASE_P(BackendOutputAllocationTestFluid, BackendOutputAllocationTest,
                         Combine(Values(CV_8UC3, CV_16SC2, CV_32FC1),
                                 Values(cv::Size(50, 50)),
-                                Values(-1),
-                                Values(CORE_FLUID)));
-
-INSTANTIATE_TEST_CASE_P(BackendOutputAllocationLargeSizeWithCorrectSubmatrixTestFluid,
-                        BackendOutputAllocationLargeSizeWithCorrectSubmatrixTest,
-                        Combine(Values(CV_8UC3, CV_16SC2, CV_32FC1),
-                                Values(cv::Size(50, 50)),
-                                Values(-1),
-                                Values(CORE_FLUID)));
-
-INSTANTIATE_TEST_CASE_P(ReInitOutTestFluid, ReInitOutTest,
-                        Combine(Values(CV_8UC3, CV_16SC4, CV_32FC1),
-                                Values(cv::Size(640, 480)),
-                                Values(-1),
-                                Values(CORE_FLUID),
-                                Values(cv::Size(640, 400),
-                                       cv::Size(10, 480))));
-
-INSTANTIATE_TEST_CASE_P(CopyTestFluid, CopyTest,
-                        Combine(Values( CV_8UC1, CV_8UC3, CV_16UC1, CV_16SC1, CV_32FC1 ),
-                                Values(cv::Size(1280, 720),
-                                       cv::Size(640, 480),
-                                       cv::Size(128, 128)),
                                 Values(-1),
                                 Values(CORE_FLUID)));
 

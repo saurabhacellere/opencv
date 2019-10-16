@@ -14,7 +14,7 @@
 namespace opencv_test
 {
 
-TEST_P(MathOpTest, MatricesAccuracyTest)
+TEST_P(MathOpTest, MatricesAccuracyTest )
 {
     // G-API code & corresponding OpenCV code ////////////////////////////////
     cv::GMat in1, in2, out;
@@ -682,6 +682,7 @@ TEST_P(IntegralTest, AccuracyTest)
 TEST_P(ThresholdTest, AccuracyTestBinary)
 {
     cv::Scalar thr = initScalarRandU(50);
+    cv::Scalar maxval = initScalarRandU(50) + cv::Scalar(50, 50, 50, 50);
     cv::Scalar out_scalar;
 
     // G-API code //////////////////////////////////////////////////////////////
@@ -1001,32 +1002,6 @@ TEST_P(CropTest, AccuracyTest)
     }
 }
 
-TEST_P(CopyTest, AccuracyTest)
-{
-    cv::Size sz_out = sz;
-    if (dtype != -1)
-    {
-        out_mat_gapi = cv::Mat(sz_out, dtype);
-        out_mat_ocv = cv::Mat(sz_out, dtype);
-    }
-
-    // G-API code //////////////////////////////////////////////////////////////
-    cv::GMat in;
-    auto out = cv::gapi::copy(in);
-
-    cv::GComputation c(in, out);
-    c.apply(in_mat1, out_mat_gapi, getCompileArgs());
-    // OpenCV code /////////////////////////////////////////////////////////////
-    {
-        cv::Mat(in_mat1).copyTo(out_mat_ocv);
-    }
-    // Comparison //////////////////////////////////////////////////////////////
-    {
-        EXPECT_EQ(0, cv::countNonZero(out_mat_ocv != out_mat_gapi));
-        EXPECT_EQ(out_mat_gapi.size(), sz_out);
-    }
-}
-
 TEST_P(ConcatHorTest, AccuracyTest)
 {
     cv::Size sz_out = sz;
@@ -1335,7 +1310,8 @@ TEST_P(BackendOutputAllocationTest, CorrectlyPreallocatedOutput)
     EXPECT_EQ(out_mat_gapi_ref.data, out_mat_gapi.data);
 }
 
-TEST_P(BackendOutputAllocationTest, IncorrectOutputMeta)
+// FIXME: known issue with OCL backend - PR #14985
+TEST_P(BackendOutputAllocationTest, DISABLED_IncorrectOutputMeta)
 {
     // G-API code //////////////////////////////////////////////////////////////
     cv::GMat in1, in2, out;
@@ -1442,8 +1418,7 @@ TEST_P(BackendOutputAllocationTest, LargerPreallocatedSize)
     EXPECT_NE(out_mat_gapi_ref.data, out_mat_gapi.data);
 }
 
-TEST_P(BackendOutputAllocationLargeSizeWithCorrectSubmatrixTest,
-    LargerPreallocatedSizeWithCorrectSubmatrix)
+TEST_P(BackendOutputAllocationTest, LargerPreallocatedSizeWithCorrectSubmatrix)
 {
     out_mat_gapi = cv::Mat(sz * 2, type);
     auto out_mat_gapi_ref = out_mat_gapi; // shallow copy to ensure previous data is not deleted
@@ -1501,39 +1476,6 @@ TEST_P(BackendOutputAllocationTest, LargerPreallocatedSizeWithSmallSubmatrix)
     EXPECT_EQ(out_mat_gapi_ref.data, out_mat_gapi.data);
     EXPECT_NE(out_mat_gapi_submat_ref.data, out_mat_gapi_submat.data);
     EXPECT_NE(out_mat_gapi.data, out_mat_gapi_submat.datastart);
-}
-
-TEST_P(ReInitOutTest, TestWithAdd)
-{
-    in_mat1 = cv::Mat(sz, type);
-    in_mat2 = cv::Mat(sz, type);
-    cv::randu(in_mat1, cv::Scalar::all(0), cv::Scalar::all(100));
-    cv::randu(in_mat2, cv::Scalar::all(0), cv::Scalar::all(100));
-
-    // G-API code //////////////////////////////////////////////////////////////
-    cv::GMat in1, in2, out;
-    out = cv::gapi::add(in1, in2, dtype);
-    cv::GComputation c(cv::GIn(in1, in2), cv::GOut(out));
-
-    const auto run_and_compare = [&c, this] ()
-    {
-        // G-API code //////////////////////////////////////////////////////////////
-        c.apply(cv::gin(in_mat1, in_mat2), cv::gout(out_mat_gapi), getCompileArgs());
-
-        // OpenCV code /////////////////////////////////////////////////////////////
-        cv::add(in_mat1, in_mat2, out_mat_ocv, cv::noArray());
-
-        // Comparison //////////////////////////////////////////////////////////////
-        EXPECT_EQ(0, cv::countNonZero(out_mat_gapi != out_mat_ocv));
-        EXPECT_EQ(out_mat_gapi.size(), sz);
-    };
-
-    // run for uninitialized output
-    run_and_compare();
-
-    // run for initialized output (can be initialized with a different size)
-    initOutMats(out_sz, type);
-    run_and_compare();
 }
 
 } // opencv_test

@@ -7,11 +7,12 @@
 //  copy or use the software.
 //
 //
-//                           License Agreement
+//                          License Agreement
 //                For Open Source Computer Vision Library
 //
 // Copyright (C) 2000-2008, Intel Corporation, all rights reserved.
 // Copyright (C) 2009, Willow Garage Inc., all rights reserved.
+// Copyright (C) 2013, OpenCV Foundation, all rights reserved.
 // Third party copyrights are property of their respective owners.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -40,85 +41,76 @@
 //
 //M*/
 
-#ifndef _GRFMT_EXR_H_
-#define _GRFMT_EXR_H_
+#ifndef _OPENCV_PATH_HPP_
+#define _OPENCV_PATH_HPP_
 
-#ifdef HAVE_OPENEXR
-
-#if defined __GNUC__ && defined __APPLE__
-#  pragma GCC diagnostic ignored "-Wshadow"
+#ifndef __cplusplus
+#  error mat.hpp header must be compiled as C++
 #endif
 
-#include <ImfChromaticities.h>
-#include <ImfInputFile.h>
-#include <ImfChannelList.h>
-#include <ImfStdIO.h>
-#include <ImathBox.h>
-#include "grfmt_base.hpp"
+#include "opencv2/core/cvstd.hpp"
 
 namespace cv
 {
 
-using namespace Imf;
-using namespace Imath;
-
-/* libpng version only */
-
-class ExrDecoder CV_FINAL : public BaseImageDecoder
-{
-public:
-
-    ExrDecoder();
-    ~ExrDecoder() CV_OVERRIDE;
-
-    int   type() const CV_OVERRIDE;
-    bool  readData( Mat& img ) CV_OVERRIDE;
-    bool  readHeader() CV_OVERRIDE;
-    void  close();
-
-    ImageDecoder newDecoder() const CV_OVERRIDE;
-
-protected:
-    void  UpSample( uchar *data, int xstep, int ystep, int xsample, int ysample );
-    void  UpSampleX( float *data, int xstep, int xsample );
-    void  UpSampleY( uchar *data, int xstep, int ystep, int ysample );
-    void  ChromaToBGR( float *data, int numlines, int step );
-    void  RGBToGray( float *in, float *out );
-
-    std::ifstream  *m_filestream;
-    StdIFStream    *m_stream;
-    InputFile      *m_file;
-    Imf::PixelType  m_type;
-    Box2i           m_datawindow;
-    bool            m_ischroma;
-    const Channel  *m_red;
-    const Channel  *m_green;
-    const Channel  *m_blue;
-    Chromaticities  m_chroma;
-    int             m_bit_depth;
-    bool            m_native_depth;
-    bool            m_iscolor;
-    bool            m_isfloat;
-
-private:
-    ExrDecoder(const ExrDecoder &); // copy disabled
-    ExrDecoder& operator=(const ExrDecoder &); // assign disabled
-};
-
-
-class ExrEncoder CV_FINAL : public BaseImageEncoder
-{
-public:
-    ExrEncoder();
-    ~ExrEncoder() CV_OVERRIDE;
-
-    bool  isFormatSupported( int depth ) const CV_OVERRIDE;
-    bool  write( const Mat& img, const std::vector<int>& params ) CV_OVERRIDE;
-    ImageEncoder newEncoder() const CV_OVERRIDE;
-};
-
-}
-
+#if defined _WIN32
+#define _CREATE_PATH(str) L##str
+#else
+#define _CREATE_PATH(str) str
 #endif
 
-#endif/*_GRFMT_EXR_H_*/
+
+//////////////////////// Path class /////////////////////////////////
+
+/*
+
+The class is designed to handle the operating system dependent differences of the file paths.
+
+On Windows the file API for std::string and const char* is for ANSI characters.
+It is unable to handle valid file path characters, such as Asian characters.
+It is necessary to use the file API for std::wstring and const wchar_t*, which uses Unicode.
+
+On other operating system the file API for std::string and const char* is for UTF-8 characters.
+
+ */
+
+class Path
+{
+public:
+#if defined _WIN32
+    typedef WString PathType;
+#else
+    typedef String PathType;
+#endif
+
+    Path() {};
+    Path( const String& value );
+    Path( const String::value_type* value );
+    Path( const WString& value );
+    Path( const WString::value_type* value );
+    Path( const Path& rhs );
+    ~Path() {};
+
+    Path& operator=( const Path& rhs );
+
+    size_t size() const;
+    bool empty() const;
+
+    const PathType::value_type* c_str() const;
+
+    void tempPath();
+
+    FILE* openPath( const Path& mode ) const;
+
+    int removePath() const;
+
+    String string() const;
+    WString wstring() const;
+
+private:
+    PathType m_path;
+};
+
+} // cv
+
+#endif // _OPENCV_PATH_HPP_

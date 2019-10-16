@@ -43,6 +43,8 @@
 #ifndef _BITSTRM_H_
 #define _BITSTRM_H_
 
+#include "path.hpp"
+
 #include <stdio.h>
 
 namespace cv
@@ -73,7 +75,7 @@ public:
     RBaseStream();
     virtual ~RBaseStream();
 
-    virtual bool  open( const String& filename );
+    virtual bool  open( const Path& filename );
     virtual bool  open( const Mat& buf );
     virtual void  close();
     bool          isOpened();
@@ -130,7 +132,7 @@ public:
     WBaseStream();
     virtual ~WBaseStream();
 
-    virtual bool  open( const String& filename );
+    virtual bool  open( const Path& filename );
     virtual bool  open( std::vector<uchar>& buf );
     virtual void  close();
     bool          isOpened();

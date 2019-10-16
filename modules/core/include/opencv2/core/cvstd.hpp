@@ -105,7 +105,7 @@ double memory deallocation.
 CV_EXPORTS void fastFree(void* ptr);
 
 /*!
-  The STL-compliant memory Allocator based on cv::fastMalloc() and cv::fastFree()
+  The STL-compilant memory Allocator based on cv::fastMalloc() and cv::fastFree()
 */
 template<typename _Tp> class Allocator
 {
@@ -150,6 +150,7 @@ public:
 class CV_EXPORTS FileNode; //for string constructor from FileNode
 
 typedef std::string String;
+typedef std::wstring WString;
 
 #ifndef OPENCV_DISABLE_STRING_LOWER_UPPER_CONVERSIONS
 

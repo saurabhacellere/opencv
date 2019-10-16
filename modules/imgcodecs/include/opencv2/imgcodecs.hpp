@@ -94,9 +94,7 @@ enum ImwriteFlags {
        IMWRITE_PAM_TUPLETYPE       = 128,//!< For PAM, sets the TUPLETYPE field to the corresponding string value that is defined for the format
        IMWRITE_TIFF_RESUNIT = 256,//!< For TIFF, use to specify which DPI resolution unit to set; see libtiff documentation for valid values
        IMWRITE_TIFF_XDPI = 257,//!< For TIFF, use to specify the X direction DPI
-       IMWRITE_TIFF_YDPI = 258, //!< For TIFF, use to specify the Y direction DPI
-       IMWRITE_TIFF_COMPRESSION = 259, //!< For TIFF, use to specify the image compression scheme. See libtiff for integer constants corresponding to compression formats. Note, for images whose depth is CV_32F, only libtiff's SGILOG compression scheme is used. For other supported depths, the compression scheme can be specified by this flag; LZW compression is the default.
-       IMWRITE_JPEG2000_COMPRESSION_X1000 = 272 //!< For JPEG2000, use to specify the target compression rate (multiplied by 1000). The value can be from 0 to 1000. Default is 1000.
+       IMWRITE_TIFF_YDPI = 258 //!< For TIFF, use to specify the Y direction DPI
      };
 
 enum ImwriteEXRTypeFlags {
@@ -175,10 +173,8 @@ Currently, the following file formats are supported:
 -   If EXIF information are embedded in the image file, the EXIF orientation will be taken into account
     and thus the image will be rotated accordingly except if the flag @ref IMREAD_IGNORE_ORIENTATION is passed.
 -   Use the IMREAD_UNCHANGED flag to keep the floating point values from PFM image.
--   By default number of pixels must be less than 2^30. Limit can be set using system
-    variable OPENCV_IO_MAX_IMAGE_PIXELS
 
-@param filename Name of file to be loaded.
+@param filename Name of file to be loaded. The string is UTF-8 encoded.
 @param flags Flag that can take values of cv::ImreadModes
 */
 CV_EXPORTS_W Mat imread( const String& filename, int flags = IMREAD_COLOR );
@@ -186,7 +182,7 @@ CV_EXPORTS_W Mat imread( const String& filename, int flags = IMREAD_COLOR );
 /** @brief Loads a multi-page image from a file.
 
 The function imreadmulti loads a multi-page image from the specified file into a vector of Mat objects.
-@param filename Name of file to be loaded.
+@param filename Name of file to be loaded. The string is UTF-8 encoded.
 @param flags Flag that can take values of cv::ImreadModes, default with cv::IMREAD_ANYCOLOR.
 @param mats A vector of Mat objects holding each page, if more than one.
 @sa cv::imread
@@ -215,7 +211,7 @@ functions to save the image to XML or YAML format.
 The sample below shows how to create a BGRA image and save it to a PNG file. It also demonstrates how to set custom
 compression parameters:
 @include snippets/imgcodecs_imwrite.cpp
-@param filename Name of the file.
+@param filename Name of the file. The string is UTF-8 encoded.
 @param img Image to be saved.
 @param params Format-specific parameters encoded as pairs (paramId_1, paramValue_1, paramId_2, paramValue_2, ... .) see cv::ImwriteFlags
 */
@@ -248,7 +244,7 @@ CV_EXPORTS Mat imdecode( InputArray buf, int flags, Mat* dst);
 The function imencode compresses the image and stores it in the memory buffer that is resized to fit the
 result. See cv::imwrite for the list of supported formats and flags description.
 
-@param ext File extension that defines the output format.
+@param ext File extension that defines the output format. The string is UTF-8 encoded.
 @param img Image to be written.
 @param buf Output buffer resized to fit the compressed image.
 @param params Format-specific parameters. See cv::imwrite and cv::ImwriteFlags.
@@ -259,13 +255,13 @@ CV_EXPORTS_W bool imencode( const String& ext, InputArray img,
 
 /** @brief Returns true if the specified image can be decoded by OpenCV
 
-@param filename File name of the image
+@param filename File name of the image. The string is UTF-8 encoded.
 */
 CV_EXPORTS_W bool haveImageReader( const String& filename );
 
 /** @brief Returns true if an image with the specified filename can be encoded by OpenCV
 
- @param filename File name of the image
+ @param filename File name of the image. The string is UTF-8 encoded.
  */
 CV_EXPORTS_W bool haveImageWriter( const String& filename );
 

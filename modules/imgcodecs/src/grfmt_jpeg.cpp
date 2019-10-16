@@ -52,7 +52,7 @@
 #include <stdio.h>
 #include <setjmp.h>
 
-// the following defines are a hack to avoid multiple problems with frame pointer handling and setjmp
+// the following defines are a hack to avoid multiple problems with frame ponter handling and setjmp
 // see http://gcc.gnu.org/ml/gcc/2011-10/msg00324.html for some details
 #define mingw_getsp(...) 0
 #define __builtin_frame_address(...) 0
@@ -226,7 +226,7 @@ bool  JpegDecoder::readHeader()
         }
         else
         {
-            m_f = fopen( m_filename.c_str(), "rb" );
+            m_f = m_filename.openPath( _CREATE_PATH("rb") );
             if( m_f )
                 jpeg_stdio_src( &state->cinfo, m_f );
         }
@@ -569,7 +569,7 @@ bool JpegEncoder::write( const Mat& img, const std::vector<int>& params )
 
     if( !m_buf )
     {
-        fw.f = fopen( m_filename.c_str(), "wb" );
+        fw.f = m_filename.openPath( _CREATE_PATH("wb") );
         if( !fw.f )
             goto _exit_;
         jpeg_stdio_dest( &cinfo, fw.f );

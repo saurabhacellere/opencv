@@ -43,7 +43,6 @@
 
 #include "precomp.hpp"
 #include "opencl_kernels_core.hpp"
-#include <atomic>
 #include <limits>
 #include <iostream>
 #include "mathfuncs.hpp"
@@ -1623,7 +1622,7 @@ void patchNaNs( InputOutputArray _a, double _val )
         for ( ; j + cWidth <= len; j += cWidth)
         {
             v_int32 v_src = vx_load(tptr + j);
-            v_int32 v_cmp_mask = v_mask2 < (v_src & v_mask1);
+            v_mask32 v_cmp_mask = v_mask2 < (v_src & v_mask1);
             v_int32 v_dst = v_select(v_cmp_mask, v_val, v_src);
             v_store(tptr + j, v_dst);
         }
@@ -2120,8 +2119,8 @@ const double* getExpTab64f()
 const float* getExpTab32f()
 {
     static float CV_DECL_ALIGNED(64) expTab_f[EXPTAB_MASK+1];
-    static std::atomic<bool> expTab_f_initialized(false);
-    if (!expTab_f_initialized.load())
+    static volatile bool expTab_f_initialized = false;
+    if (!expTab_f_initialized)
     {
         for( int j = 0; j <= EXPTAB_MASK; j++ )
             expTab_f[j] = (float)expTab[j];
@@ -2402,8 +2401,8 @@ const double* getLogTab64f()
 const float* getLogTab32f()
 {
     static float CV_DECL_ALIGNED(64) logTab_f[(LOGTAB_MASK+1)*2];
-    static std::atomic<bool> logTab_f_initialized(false);
-    if (!logTab_f_initialized.load())
+    static volatile bool logTab_f_initialized = false;
+    if (!logTab_f_initialized)
     {
         for (int j = 0; j < (LOGTAB_MASK+1)*2; j++)
             logTab_f[j] = (float)logTab[j];

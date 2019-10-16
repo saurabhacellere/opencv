@@ -146,7 +146,7 @@ TEST_P(Test_Caffe_layers, DeConvolution)
 
 TEST_P(Test_Caffe_layers, InnerProduct)
 {
-    if (backend == DNN_BACKEND_INFERENCE_ENGINE)
+    if (backend == DNN_BACKEND_INFERENCE_ENGINE || backend == DNN_BACKEND_NGRAPH)
         applyTestTag(CV_TEST_TAG_DNN_SKIP_IE);
     if (backend == DNN_BACKEND_OPENCV && target == DNN_TARGET_OPENCL_FP16)
         applyTestTag(CV_TEST_TAG_DNN_SKIP_OPENCL_FP16);
@@ -238,7 +238,7 @@ TEST_P(Test_Caffe_layers, Concat)
     if (backend == DNN_BACKEND_INFERENCE_ENGINE && target == DNN_TARGET_MYRIAD)
         applyTestTag(CV_TEST_TAG_DNN_SKIP_IE_MYRIAD, CV_TEST_TAG_DNN_SKIP_IE_2019R1, CV_TEST_TAG_DNN_SKIP_IE_2019R1_1);
 #elif INF_ENGINE_VER_MAJOR_EQ(2019020000)
-    if (backend == DNN_BACKEND_INFERENCE_ENGINE && target == DNN_TARGET_OPENCL)
+    if ((backend == DNN_BACKEND_INFERENCE_ENGINE || backend == DNN_BACKEND_NGRAPH) && target == DNN_TARGET_OPENCL)
         applyTestTag(CV_TEST_TAG_DNN_SKIP_IE_OPENCL, CV_TEST_TAG_DNN_SKIP_IE_2019R2);
 #endif
 #endif
@@ -317,7 +317,7 @@ TEST_P(Test_Caffe_layers, layer_prelu_fc)
 
 TEST_P(Test_Caffe_layers, Reshape_Split_Slice)
 {
-    if (backend == DNN_BACKEND_INFERENCE_ENGINE)
+    if (backend == DNN_BACKEND_INFERENCE_ENGINE || backend == DNN_BACKEND_NGRAPH)
         applyTestTag(CV_TEST_TAG_DNN_SKIP_IE);
 
     Net net = readNetFromCaffe(_tf("reshape_and_slice_routines.prototxt"));
@@ -461,55 +461,6 @@ TEST(Layer_RNN_Test_Accuracy_with_, CaffeRecurrent)
     normAssert(h_ref, output[0]);
 }
 
-TEST(Layer_LSTM_Test_Accuracy_, Reverse)
-{
-    // This handcrafted setup calculates (approximately) the prefix sum of the
-    // input, assuming the inputs are suitably small.
-    cv::Mat input(2, 1, CV_32FC1);
-    input.at<float>(0, 0) = 1e-5f;
-    input.at<float>(1, 0) = 2e-5f;
-
-    cv::Mat Wx(4, 1, CV_32FC1);
-    Wx.at<float>(0, 0) = 0.f;  // Input gate
-    Wx.at<float>(1, 0) = 0.f;  // Forget gate
-    Wx.at<float>(2, 0) = 0.f;  // Output gate
-    Wx.at<float>(3, 0) = 1.f;  // Update signal
-
-    cv::Mat Wh(4, 1, CV_32FC1);
-    Wh.at<float>(0, 0) = 0.f;  // Input gate
-    Wh.at<float>(1, 0) = 0.f;  // Forget gate
-    Wh.at<float>(2, 0) = 0.f;  // Output gate
-    Wh.at<float>(3, 0) = 0.f;  // Update signal
-
-    cv::Mat bias(4, 1, CV_32FC1);
-    bias.at<float>(0, 0) = 1e10f;  // Input gate - always allows input to c
-    bias.at<float>(1, 0) = 1e10f;  // Forget gate - never forget anything on c
-    bias.at<float>(2, 0) = 1e10f;  // Output gate - always output everything
-    bias.at<float>(3, 0) = 0.f;  // Update signal
-
-    LayerParams lp;
-    lp.set("reverse", true);
-    lp.set("use_timestamp_dim", true);
-    lp.blobs.clear();
-    lp.blobs.push_back(Wh);
-    lp.blobs.push_back(Wx);
-    lp.blobs.push_back(bias);
-
-    cv::Ptr<cv::dnn::LSTMLayer> layer = LSTMLayer::create(lp);
-    std::vector<cv::Mat> outputs;
-    std::vector<cv::Mat> inputs;
-    inputs.push_back(input);
-    runLayer(layer, inputs, outputs);
-
-    ASSERT_EQ(1, outputs.size());
-    cv::Mat out = outputs[0];
-    ASSERT_EQ(3, out.dims);
-    ASSERT_EQ(shape(2, 1, 1), shape(out));
-    float* data = reinterpret_cast<float*>(out.data);
-    EXPECT_NEAR(std::tanh(1e-5f) + std::tanh(2e-5f), data[0], 1e-10);
-    EXPECT_NEAR(std::tanh(2e-5f), data[1], 1e-10);
-}
-
 
 class Layer_RNN_Test : public ::testing::Test
 {
@@ -563,7 +514,7 @@ TEST(Layer_Test_ROIPooling, Accuracy)
 
     net.setInput(inp, "input");
     net.setInput(rois, "rois");
-    net.setPreferableBackend(DNN_BACKEND_OPENCV);
+    net.setPreferableBackend(DNN_BACKEND_NGRAPH);
 
     Mat out = net.forward();
 
@@ -574,7 +525,7 @@ TEST_P(Test_Caffe_layers, FasterRCNN_Proposal)
 {
     if (backend == DNN_BACKEND_OPENCV && target == DNN_TARGET_OPENCL_FP16)
         applyTestTag(CV_TEST_TAG_DNN_SKIP_OPENCL_FP16);
-    if (backend == DNN_BACKEND_INFERENCE_ENGINE)
+    if (backend == DNN_BACKEND_INFERENCE_ENGINE || backend == DNN_BACKEND_NGRAPH)
         applyTestTag(CV_TEST_TAG_DNN_SKIP_IE);
 
     Net net = readNetFromCaffe(_tf("net_faster_rcnn_proposal.prototxt"));
@@ -807,6 +758,8 @@ TEST_P(Test_Caffe_layers, PriorBox_repeated)
     randu(shape, -1.0f, 1.0f);
     net.setInput(inp, "data");
     net.setInput(shape, "shape");
+    net.setPreferableBackend(backend);
+    net.setPreferableTarget(target);
     Mat out = net.forward();
     Mat ref = blobFromNPY(_tf("priorbox_output.npy"));
     normAssert(out, ref, "");
@@ -1203,7 +1156,7 @@ TEST(Test_DLDT, fused_output)
         LayerParams lp;
         net.addLayerToPrev("unsupported_layer", "Unsupported", lp);
     }
-    net.setPreferableBackend(DNN_BACKEND_INFERENCE_ENGINE);
+    net.setPreferableBackend(DNN_BACKEND_NGRAPH);
     net.setInput(Mat({1, 1, 1, 1}, CV_32FC1, Scalar(1)));
     ASSERT_NO_THROW(net.forward());
     LayerFactory::unregisterLayer("Unsupported");

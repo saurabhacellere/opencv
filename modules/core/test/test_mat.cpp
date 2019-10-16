@@ -952,7 +952,7 @@ void Core_ArrayOpTest::run( int /* start_from */)
 }
 
 
-template <class T>
+template <class ElemType>
 int calcDiffElemCountImpl(const vector<Mat>& mv, const Mat& m)
 {
     int diffElemCount = 0;
@@ -961,12 +961,12 @@ int calcDiffElemCountImpl(const vector<Mat>& mv, const Mat& m)
     {
         for(int x = 0; x < m.cols; x++)
         {
-            const T* mElem = &m.at<T>(y, x*mChannels);
+            const ElemType* mElem = &m.at<ElemType>(y,x*mChannels);
             size_t loc = 0;
             for(size_t i = 0; i < mv.size(); i++)
             {
                 const size_t mvChannel = mv[i].channels();
-                const T* mvElem = &mv[i].at<T>(y, x*(int)mvChannel);
+                const ElemType* mvElem = &mv[i].at<ElemType>(y,x*(int)mvChannel);
                 for(size_t li = 0; li < mvChannel; li++)
                     if(mElem[loc + li] != mvElem[li])
                         diffElemCount++;
@@ -1350,6 +1350,8 @@ TEST(Core_Matx, fromMat_)
     ASSERT_EQ( cvtest::norm(a, b, NORM_INF), 0.);
 }
 
+#ifdef CV_CXX11
+
 TEST(Core_Matx, from_initializer_list)
 {
     Mat_<double> a = (Mat_<double>(2,2) << 10, 11, 12, 13);
@@ -1363,6 +1365,8 @@ TEST(Core_Mat, regression_9507)
     cv::Mat m2{m};
     EXPECT_EQ(25u, m2.total());
 }
+
+#endif // CXX11
 
 TEST(Core_InputArray, empty)
 {
@@ -1640,6 +1644,7 @@ TEST(Mat, regression_10507_mat_setTo)
     }
 }
 
+#ifdef CV_CXX_STD_ARRAY
 TEST(Core_Mat_array, outputArray_create_getMat)
 {
     cv::Mat_<uchar> src_base(5, 1);
@@ -1728,6 +1733,7 @@ TEST(Core_Mat_array, SplitMerge)
         EXPECT_EQ(0, cvtest::norm(src[i], dst[i], NORM_INF));
     }
 }
+#endif
 
 TEST(Mat, regression_8680)
 {
@@ -1736,6 +1742,8 @@ TEST(Mat, regression_8680)
    mat.release();
    ASSERT_EQ(mat.channels(), 2);
 }
+
+#ifdef CV_CXX11
 
 TEST(Mat_, range_based_for)
 {
@@ -1797,6 +1805,8 @@ TEST(Mat_, template_based_ptr)
     int idx[4] = {1, 0, 0, 1};
     ASSERT_FLOAT_EQ(66.0f, *(mat.ptr<float>(idx)));
 }
+
+#endif
 
 
 BIGDATA_TEST(Mat, push_back_regression_4158)  // memory usage: ~10.6 Gb
@@ -1959,6 +1969,29 @@ TEST(Core_InputArray, support_CustomType)
     }
 }
 
+TEST(Core_InputArray, issue_8385)
+{
+    Mat x(1, 2, CV_8UC1, Scalar::all(3)), y;
+    cv::add(x, 2.0, x);
+    cv::multiply(x, x, x, 1, CV_16UC1);
+    EXPECT_EQ(25, (int)x.ptr<ushort>()[0]);
+    EXPECT_EQ(25, (int)x.ptr<ushort>()[1]);
+}
+
+TEST(Core_InputArray, issue_9688)
+{
+    Mat x(1, 1, CV_64FC1);
+    Mat p(10, 4, CV_64FC1);
+    x.setTo(0);
+    p.setTo(Scalar::all(5));
+    for (int i = 0; i < p.rows; i++)
+        x += p.row(i);
+    ASSERT_DOUBLE_EQ(50.0, x.ptr<double>()[0]);
+    ASSERT_DOUBLE_EQ(50.0, x.ptr<double>()[1]);
+    ASSERT_DOUBLE_EQ(50.0, x.ptr<double>()[2]);
+    ASSERT_DOUBLE_EQ(50.0, x.ptr<double>()[3]);
+}
+
 TEST(Core_Vectors, issue_13078)
 {
     float floats_[] = { 1, 2, 3, 4, 5, 6, 7, 8 };
@@ -1989,22 +2022,6 @@ TEST(Core_Vectors, issue_13078_workaround)
     ASSERT_EQ(3, ints[1]);
     ASSERT_EQ(5, ints[2]);
     ASSERT_EQ(7, ints[3]);
-}
-
-TEST(Core_MatExpr, issue_13926)
-{
-    Mat M1 = (Mat_<double>(4,4,CV_64FC1) << 1, 2, 3, 4,
-                                           5, 6, 7, 8,
-                                           9, 10, 11, 12,
-                                           13, 14, 15, 16);
-
-    Matx44d M2(1, 2, 3, 4,
-               5, 6, 7, 8,
-               9, 10, 11, 12,
-               13, 14, 15, 16);
-
-    EXPECT_GE(1e-6, cvtest::norm(M1*M2, M1*M1, NORM_INF)) << Mat(M1*M2) << std::endl << Mat(M1*M1);
-    EXPECT_GE(1e-6, cvtest::norm(M2*M1, M2*M2, NORM_INF)) << Mat(M2*M1) << std::endl << Mat(M2*M2);
 }
 
 

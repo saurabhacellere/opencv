@@ -29,7 +29,6 @@
 #include "compiler/gcompiler.hpp"
 #include "compiler/gcompiled_priv.hpp"
 #include "compiler/passes/passes.hpp"
-#include "compiler/passes/pattern_matching.hpp"
 
 #include "executor/gexecutor.hpp"
 #include "backends/common/gbackend.hpp"
@@ -73,12 +72,6 @@ namespace
         return combine(ocv_pkg, user_pkg_with_aux);
     }
 
-    cv::gapi::GNetPackage getNetworkPackage(cv::GCompileArgs &args)
-    {
-        return cv::gimpl::getCompileArg<cv::gapi::GNetPackage>(args)
-            .value_or(cv::gapi::GNetPackage{});
-    }
-
     cv::util::optional<std::string> getGraphDumpDirectory(cv::GCompileArgs& args)
     {
         auto dump_info = cv::gimpl::getCompileArg<cv::graph_dump_path>(args);
@@ -94,94 +87,6 @@ namespace
             return cv::util::make_optional(dump_info.value().m_dump_path);
         }
     }
-
-    template<typename C>
-    cv::gapi::GKernelPackage auxKernelsFrom(const C& c) {
-        cv::gapi::GKernelPackage result;
-        for (const auto &b : c) {
-            result = cv::gapi::combine(result, b.priv().auxiliaryKernels());
-        }
-        return result;
-    }
-
-    // Creates ADE graph from input/output proto args
-    std::unique_ptr<ade::Graph> makeGraph(const cv::GProtoArgs &ins, const cv::GProtoArgs &outs) {
-        std::unique_ptr<ade::Graph> pG(new ade::Graph);
-        ade::Graph& g = *pG;
-
-        cv::gimpl::GModel::Graph gm(g);
-        cv::gimpl::GModel::init(gm);
-        cv::gimpl::GModelBuilder builder(g);
-        auto proto_slots = builder.put(ins, outs);
-
-        // Store Computation's protocol in metadata
-        cv::gimpl::Protocol p;
-        std::tie(p.inputs, p.outputs, p.in_nhs, p.out_nhs) = proto_slots;
-        gm.metadata().set(p);
-
-        return pG;
-    }
-
-    using adeGraphs = std::vector<std::unique_ptr<ade::Graph>>;
-
-    // Creates ADE graphs (patterns and substitutes) from pkg's transformations
-    void makeTransformationGraphs(const cv::gapi::GKernelPackage& pkg,
-                                  adeGraphs& patterns,
-                                  adeGraphs& substitutes) {
-        const auto& transforms = pkg.get_transformations();
-        const auto size = transforms.size();
-        if (0u == size) return;
-
-        // pre-generate all required graphs
-        patterns.resize(size);
-        substitutes.resize(size);
-        for (auto it : ade::util::zip(ade::util::toRange(transforms),
-                                      ade::util::toRange(patterns),
-                                      ade::util::toRange(substitutes))) {
-            const auto& t = std::get<0>(it);
-            auto& p = std::get<1>(it);
-            auto& s = std::get<2>(it);
-
-            auto pattern_comp = t.pattern();
-            p = makeGraph(pattern_comp.priv().m_ins, pattern_comp.priv().m_outs);
-
-            auto substitute_comp = t.substitute();
-            s = makeGraph(substitute_comp.priv().m_ins, substitute_comp.priv().m_outs);
-        }
-    }
-
-    void checkTransformations(const cv::gapi::GKernelPackage& pkg,
-                              const adeGraphs& patterns,
-                              const adeGraphs& substitutes) {
-        const auto& transforms = pkg.get_transformations();
-        const auto size = transforms.size();
-        if (0u == size) return;
-
-        GAPI_Assert(size == patterns.size());
-        GAPI_Assert(size == substitutes.size());
-
-        const auto empty = [] (const cv::gimpl::SubgraphMatch& m) {
-            return m.inputDataNodes.empty() && m.startOpNodes.empty()
-                && m.finishOpNodes.empty() && m.outputDataNodes.empty()
-                && m.inputTestDataNodes.empty() && m.outputTestDataNodes.empty();
-        };
-
-        // **FIXME**: verify other types of endless loops. now, only checking if pattern exists in
-        //            substitute within __the same__ transformation
-        for (size_t i = 0; i < size; ++i) {
-            const auto& p = patterns[i];
-            const auto& s = substitutes[i];
-
-            auto matchInSubstitute = cv::gimpl::findMatches(*p, *s);
-            if (!empty(matchInSubstitute)) {
-                std::stringstream ss;
-                ss << "Error: (in transformation with description: '"
-                    << transforms[i].description
-                    << "') pattern is detected inside substitute";
-                throw std::runtime_error(ss.str());
-            }
-        }
-    }
 } // anonymous namespace
 
 
@@ -193,44 +98,13 @@ cv::gimpl::GCompiler::GCompiler(const cv::GComputation &c,
     : m_c(c), m_metas(std::move(metas)), m_args(std::move(args))
 {
     using namespace std::placeholders;
-
-    auto kernels_to_use  = getKernelPackage(m_args);
-    auto networks_to_use = getNetworkPackage(m_args);
-    std::unordered_set<cv::gapi::GBackend> all_backends;
-    const auto take = [&](std::vector<cv::gapi::GBackend> &&v) {
-        all_backends.insert(v.begin(), v.end());
-    };
-    take(kernels_to_use.backends());
-    take(networks_to_use.backends());
-    m_all_kernels        = cv::gapi::combine(kernels_to_use,
-                                             auxKernelsFrom(all_backends));
-    // NB: The expectation in the line above is that
-    // NN backends (present here via network package) always add their
-    // inference kernels via auxiliary...()
-
-    // sanity check transformations
-    {
-        adeGraphs patterns, substitutes;
-        // FIXME: returning vectors of unique_ptrs from makeTransformationGraphs results in
-        //        compile error (at least) on GCC 9 with usage of copy-ctor of std::unique_ptr, so
-        //        using initialization by lvalue reference instead
-        makeTransformationGraphs(m_all_kernels, patterns, substitutes);
-        checkTransformations(m_all_kernels, patterns, substitutes);
-
-        // NB: saving generated patterns to m_all_patterns to be used later in passes
-        m_all_patterns = std::move(patterns);
-    }
-
-    auto dump_path       = getGraphDumpDirectory(m_args);
+    m_all_kernels       = getKernelPackage(m_args);
+    auto dump_path      = getGraphDumpDirectory(m_args);
 
     m_e.addPassStage("init");
     m_e.addPass("init", "check_cycles",  ade::passes::CheckCycles());
-    m_e.addPass("init", "apply_transformations",
-                std::bind(passes::applyTransformations, _1, std::cref(m_all_kernels),
-                    std::cref(m_all_patterns)));  // Note: and re-using patterns here
-    m_e.addPass("init", "expand_kernels",
-                std::bind(passes::expandKernels, _1,
-                          m_all_kernels)); // NB: package is copied
+    m_e.addPass("init", "expand_kernels",  std::bind(passes::expandKernels, _1,
+                                                     m_all_kernels)); // NB: package is copied
     m_e.addPass("init", "topo_sort",     ade::passes::TopologicalSort());
     m_e.addPass("init", "init_islands",  passes::initIslands);
     m_e.addPass("init", "check_islands", passes::checkIslands);
@@ -243,13 +117,8 @@ cv::gimpl::GCompiler::GCompiler(const cv::GComputation &c,
     m_all_kernels.remove(cv::gapi::compound::backend());
 
     m_e.addPassStage("kernels");
-    m_e.addPass("kernels", "bind_net_params",
-                std::bind(passes::bindNetParams, _1,
-                          networks_to_use));
-    m_e.addPass("kernels", "resolve_kernels",
-                std::bind(passes::resolveKernels, _1,
-                          std::ref(m_all_kernels)));  // NB: and not copied here
-                                                      // (no compound backend present here)
+    m_e.addPass("kernels", "resolve_kernels", std::bind(passes::resolveKernels, _1,
+                                              std::ref(m_all_kernels))); // NB: and not copied here
     m_e.addPass("kernels", "check_islands_content", passes::checkIslandsContent);
 
     m_e.addPassStage("meta");
@@ -273,9 +142,7 @@ cv::gimpl::GCompiler::GCompiler(const cv::GComputation &c,
                                                   dump_path.value()));
     }
 
-    // FIXME: This should be called for "ActiveBackends" only (see metadata).
-    // However, ActiveBackends are known only after passes are actually executed.
-    // At these stage, they are not executed yet.
+    // Process backends at the last moment (after all G-API passes are added).
     ade::ExecutionEngineSetupContext ectx(m_e);
     auto backends = m_all_kernels.backends();
     for (auto &b : backends)
@@ -350,7 +217,23 @@ cv::gimpl::GCompiler::GPtr cv::gimpl::GCompiler::generateGraph()
 {
     validateInputMeta();
     validateOutProtoArgs();
-    return makeGraph(m_c.priv().m_ins, m_c.priv().m_outs);
+
+    // Generate ADE graph from expression-based computation
+    std::unique_ptr<ade::Graph> pG(new ade::Graph);
+    ade::Graph& g = *pG;
+
+    GModel::Graph gm(g);
+    cv::gimpl::GModel::init(gm);
+    cv::gimpl::GModelBuilder builder(g);
+    auto proto_slots = builder.put(m_c.priv().m_ins, m_c.priv().m_outs);
+    GAPI_LOG_INFO(NULL, "Generated graph: " << g.nodes().size() << " nodes" << std::endl);
+
+    // Store Computation's protocol in metadata
+    Protocol p;
+    std::tie(p.inputs, p.outputs, p.in_nhs, p.out_nhs) = proto_slots;
+    gm.metadata().set(p);
+
+    return pG;
 }
 
 void cv::gimpl::GCompiler::runPasses(ade::Graph &g)
@@ -376,7 +259,7 @@ void cv::gimpl::GCompiler::compileIslands(ade::Graph &g)
 cv::GCompiled cv::gimpl::GCompiler::produceCompiled(GPtr &&pg)
 {
     // This is the final compilation step. Here:
-    // - An instance of GExecutor is created. Depending on the platform,
+    // - An instance of GExecutor is created. Depening on the platform,
     //   build configuration, etc, a GExecutor may be:
     //   - a naive single-thread graph interpreter;
     //   - a std::thread-based thing

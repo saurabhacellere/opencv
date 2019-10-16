@@ -16,7 +16,6 @@
 
 #include <ade/util/algorithm.hpp>
 #include <ade/util/chain_range.hpp>
-#include <ade/util/iota_range.hpp>
 #include <ade/util/range.hpp>
 #include <ade/util/zip_range.hpp>
 
@@ -95,35 +94,8 @@ namespace
 
             auto graph_data = fluidExtractInputDataFromGraph(graph, nodes);
             const auto parallel_out_rois = cv::gimpl::getCompileArg<cv::GFluidParallelOutputRois>(args);
-            const auto gpfor             = cv::gimpl::getCompileArg<cv::GFluidParallelFor>(args);
-
-#if !defined(GAPI_STANDALONE)
-            auto default_pfor = [](std::size_t count, std::function<void(std::size_t)> f){
-                struct Body : cv::ParallelLoopBody {
-                    decltype(f) func;
-                    Body( decltype(f) && _f) : func(_f){}
-                    virtual void operator() (const cv::Range& r) const CV_OVERRIDE
-                    {
-                        for (std::size_t i : ade::util::iota(r.start, r.end))
-                        {
-                            func(i);
-                        }
-                    }
-                };
-                cv::parallel_for_(cv::Range{0,static_cast<int>(count)}, Body{std::move(f)});
-            };
-#else
-            auto default_pfor = [](std::size_t count, std::function<void(std::size_t)> f){
-                for (auto i : ade::util::iota(count)){
-                    f(i);
-                }
-            };
-#endif
-
-            auto pfor  = gpfor.has_value() ? gpfor.value().parallel_for : default_pfor;
-
             return parallel_out_rois.has_value() ?
-                       EPtr{new cv::gimpl::GParallelFluidExecutable (graph, graph_data, std::move(parallel_out_rois.value().parallel_rois), pfor)}
+                       EPtr{new cv::gimpl::GParallelFluidExecutable (graph, graph_data, std::move(parallel_out_rois.value().parallel_rois))}
                      : EPtr{new cv::gimpl::GFluidExecutable         (graph, graph_data, std::move(rois.rois))}
             ;
         }
@@ -585,20 +557,16 @@ void cv::gimpl::GFluidExecutable::initBufferRois(std::vector<int>& readStarts,
             auto id = m_id_map.at(d.rc);
             readStarts[id] = 0;
 
-            const auto& out_roi = out_rois[idx];
-            if (out_roi == gapi::own::Rect{})
+            if (out_rois[idx] == gapi::own::Rect{})
             {
                 rois[id] = gapi::own::Rect{ 0, 0, desc.size.width, desc.size.height };
             }
             else
             {
-                GAPI_Assert(out_roi.height > 0);
-                GAPI_Assert(out_roi.y + out_roi.height <= desc.size.height);
-
                 // Only slices are supported at the moment
-                GAPI_Assert(out_roi.x == 0);
-                GAPI_Assert(out_roi.width == desc.size.width);
-                rois[id] = out_roi;
+                GAPI_Assert(out_rois[idx].x == 0);
+                GAPI_Assert(out_rois[idx].width == desc.size.width);
+                rois[id] = out_rois[idx];
             }
 
             nodesToVisit.push(nh);
@@ -822,13 +790,20 @@ cv::gimpl::FluidGraphInputData cv::gimpl::fluidExtractInputDataFromGraph(const a
 cv::gimpl::GFluidExecutable::GFluidExecutable(const ade::Graph                       &g,
                                               const cv::gimpl::FluidGraphInputData   &traverse_res,
                                               const std::vector<cv::gapi::own::Rect> &outputRois)
-    : m_g(g), m_gm(m_g),
-      m_num_int_buffers (traverse_res.m_mat_count),
-      m_scratch_users   (traverse_res.m_scratch_users),
-      m_id_map          (traverse_res.m_id_map),
-      m_all_gmat_ids    (traverse_res.m_all_gmat_ids)
+    : m_g(g), m_gm(m_g)
 {
     GConstFluidModel fg(m_g);
+
+    auto tie_traverse_res = [&traverse_res](){
+        auto& r = traverse_res;
+        return std::tie(r.m_scratch_users, r.m_id_map, r.m_all_gmat_ids, r.m_mat_count);
+    };
+
+    auto tie_this   =  [this](){
+        return std::tie(m_scratch_users, m_id_map, m_all_gmat_ids, m_num_int_buffers);
+    };
+
+    tie_this() = tie_traverse_res();
 
     auto create_fluid_agent = [&g](agent_data_t const& agent_data) -> std::unique_ptr<FluidAgent> {
         std::unique_ptr<FluidAgent> agent_ptr;
@@ -956,8 +931,6 @@ namespace
                 fd.skew            = 0;
                 fd.max_consumption = 0;
             }
-
-            GModel::log_clear(g, node);
         }
     }
 
@@ -1164,16 +1137,7 @@ void cv::gimpl::GFluidExecutable::makeReshape(const std::vector<gapi::own::Rect>
         // Introduce Storage::INTERNAL_GRAPH and Storage::INTERNAL_ISLAND?
         if (fd.internal == true)
         {
-            // FIXME: do max_consumption calculation properly (e.g. in initLineConsumption)
-            int max_consumption = 0;
-            if (nh->outNodes().empty()) {
-                // nh is always a DATA node, so it is safe to get inNodes().front() since there's
-                // always a single writer (OP node)
-                max_consumption = fg.metadata(nh->inNodes().front()).get<FluidUnit>().k.m_lpi;
-            } else {
-                max_consumption = fd.max_consumption;
-            }
-            m_buffers[id].priv().allocate(fd.border, fd.border_size, max_consumption, fd.skew);
+            m_buffers[id].priv().allocate(fd.border, fd.border_size, fd.max_consumption, fd.skew);
             std::stringstream stream;
             m_buffers[id].debug(stream);
             GAPI_LOG_INFO(NULL, stream.str());
@@ -1242,7 +1206,6 @@ void cv::gimpl::GFluidExecutable::bindInArg(const cv::gimpl::RcDesc &rc, const G
     {
     case GShape::GMAT:    m_buffers[m_id_map.at(rc.id)].priv().bindTo(util::get<cv::gapi::own::Mat>(arg), true); break;
     case GShape::GSCALAR: m_res.slot<cv::gapi::own::Scalar>()[rc.id] = util::get<cv::gapi::own::Scalar>(arg); break;
-    case GShape::GARRAY:  m_res.slot<cv::detail::VectorRef>()[rc.id] = util::get<cv::detail::VectorRef>(arg); break;
     default: util::throw_error(std::logic_error("Unsupported GShape type"));
     }
 }
@@ -1268,8 +1231,7 @@ void cv::gimpl::GFluidExecutable::bindOutArg(const cv::gimpl::RcDesc &rc, const 
 void cv::gimpl::GFluidExecutable::packArg(cv::GArg &in_arg, const cv::GArg &op_arg)
 {
     GAPI_Assert(op_arg.kind != cv::detail::ArgKind::GMAT
-           && op_arg.kind != cv::detail::ArgKind::GSCALAR
-           && op_arg.kind != cv::detail::ArgKind::GARRAY);
+           && op_arg.kind != cv::detail::ArgKind::GSCALAR);
 
     if (op_arg.kind == cv::detail::ArgKind::GOBJREF)
     {
@@ -1277,10 +1239,6 @@ void cv::gimpl::GFluidExecutable::packArg(cv::GArg &in_arg, const cv::GArg &op_a
         if (ref.shape == GShape::GSCALAR)
         {
             in_arg = GArg(m_res.slot<cv::gapi::own::Scalar>()[ref.id]);
-        }
-        else if (ref.shape == GShape::GARRAY)
-        {
-            in_arg = GArg(m_res.slot<cv::detail::VectorRef>()[ref.id]);
         }
     }
 }
@@ -1367,9 +1325,7 @@ void cv::gimpl::GFluidExecutable::run(std::vector<InObj>  &input_objs,
 
 cv::gimpl::GParallelFluidExecutable::GParallelFluidExecutable(const ade::Graph                      &g,
                                                               const FluidGraphInputData             &graph_data,
-                                                              const std::vector<GFluidOutputRois>   &parallelOutputRois,
-                                                              const decltype(parallel_for)          &pfor)
-: parallel_for(pfor)
+                                                              const std::vector<GFluidOutputRois>   &parallelOutputRois)
 {
     for (auto&& rois : parallelOutputRois){
         tiles.emplace_back(new GFluidExecutable(g, graph_data, rois.rois));
@@ -1386,10 +1342,10 @@ void cv::gimpl::GParallelFluidExecutable::reshape(ade::Graph&, const GCompileArg
 void cv::gimpl::GParallelFluidExecutable::run(std::vector<InObj>  &&input_objs,
                                               std::vector<OutObj> &&output_objs)
 {
-    parallel_for(tiles.size(), [&, this](std::size_t index){
-        GAPI_Assert((bool)tiles[index]);
-        tiles[index]->run(input_objs, output_objs);
-    });
+    for (auto& tile : tiles ){
+        GAPI_Assert((bool)tile);
+        tile->run(input_objs, output_objs);
+    }
 }
 
 

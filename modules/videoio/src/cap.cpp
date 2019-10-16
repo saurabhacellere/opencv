@@ -236,6 +236,43 @@ bool VideoCapture::grab()
     return ret;
 }
 
+bool VideoCapture::waitAny(std::vector<VideoCapture>& v_captures, std::vector<int>& state, int timeout_millisec)
+{
+    if(!v_captures.empty())
+    {
+        int bcknd = v_captures[0].icap->getCaptureDomain();
+
+        for(const auto& bcknd_num : v_captures)
+        {
+            if(!(bcknd == bcknd_num.icap->getCaptureDomain()))
+            {
+                CV_Error(Error::StsError, "All captures must have same backend");
+            }
+        }
+        if(state.size() != v_captures.size())
+            return false;
+        std::vector<IVideoCapture* > ipointers;
+
+        for(const auto& cupture_num : v_captures)
+        {
+            ipointers.push_back(cupture_num.icap);
+        }
+        if(!v_captures[0].icap->camerasPoll(ipointers, state, timeout_millisec))
+            return false;
+
+        for (size_t cupture_num = 0; cupture_num < state.size(); ++cupture_num)
+        {
+            if(state[cupture_num] == CAP_CAM_READY)
+            {
+                v_captures[cupture_num].icap->grabFrame();
+            }
+        }
+        return true;
+    }
+    else
+        CV_Error(Error::StsError, "Capture list is empty");
+}
+
 bool VideoCapture::retrieve(OutputArray image, int channel)
 {
     CV_INSTRUMENT_REGION();

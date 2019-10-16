@@ -29,6 +29,15 @@ static void test_readFrames(/*const*/ VideoCapture& capture, const int N = 100, 
     if (lastFrame) *lastFrame = frame.clone();
 }
 
+static char* get_cameras_list()
+{
+#ifndef WINRT
+    return getenv("OPENCV_TEST_CAMERA_LIST");
+#else
+    return OPENCV_TEST_CAMERA_LIST;
+#endif
+}
+
 TEST(DISABLED_videoio_camera, basic)
 {
     VideoCapture capture(0);
@@ -104,5 +113,140 @@ TEST(DISABLED_videoio_camera, v4l_read_framesize)
 
     capture.release();
 }
+
+TEST(DISABLED_videoio_camera, v4l_poll_timeout)
+{
+    //Two identical cameras
+    //Test only >= two cameras
+    char* datapath_dir = get_cameras_list();
+    ASSERT_FALSE(datapath_dir == nullptr || datapath_dir[0] == '\0');
+    std::vector<VideoCapture> VCM;
+    int step = 0; string path;
+    while(true)
+    {
+        if(datapath_dir[step] == ':' || datapath_dir[step] == '\0')
+        {
+            VCM.push_back(VideoCapture(path, CAP_V4L));
+            path.clear();
+            if(datapath_dir[step] != '\0')
+                ++step;
+        }
+        if(datapath_dir[step] == '\0')
+            break;
+        path += datapath_dir[step];
+        ++step;
+    }
+    Mat frame1;
+    EXPECT_TRUE(VCM[0].set(CAP_PROP_FPS, 30));
+    EXPECT_TRUE(VCM[1].set(CAP_PROP_FPS, 15));
+    for(size_t vc = 0; vc < VCM.size(); ++vc)
+    {
+        ASSERT_TRUE(VCM[vc].isOpened());
+        //launch cameras
+        EXPECT_TRUE(VCM[vc].read(frame1));
+    }
+    std::vector<int> state(VCM.size());
+
+    float EPSILON = 1;
+    int ITERATION_COUNT = 10;//Number of steps
+
+    for(int i = 0; i < ITERATION_COUNT; ++i)
+    {
+        int TIMEOUT = 10;
+        TickMeter tm;
+
+        tm.start();
+        VideoCapture::waitAny(VCM, state, TIMEOUT);
+        tm.stop();
+
+        EXPECT_LE(tm.getTimeMilli(), TIMEOUT + EPSILON);
+
+        TIMEOUT = 23;
+
+        tm.reset();
+        tm.start();
+        VideoCapture::waitAny(VCM, state, TIMEOUT);
+        tm.stop();
+
+        EXPECT_LE(tm.getTimeMilli(), TIMEOUT + EPSILON);
+
+        TIMEOUT = 30;
+
+        tm.reset();
+        tm.start();
+        VideoCapture::waitAny(VCM, state, TIMEOUT);
+        tm.stop();
+
+        EXPECT_LE(tm.getTimeMilli(), TIMEOUT + EPSILON);
+    }
+}
+
+typedef tuple<int, int> Size_FPS;
+typedef testing::TestWithParam< Size_FPS > DISABLED_videoio_fps;
+
+TEST_P(DISABLED_videoio_fps, v4l_poll_fps)
+{
+    //Two identical cameras
+    //Test only >= two cameras
+    char* datapath_dir = get_cameras_list();
+    ASSERT_FALSE(datapath_dir == nullptr || datapath_dir[0] == '\0');
+    std::vector<VideoCapture> VCM;
+    int step = 0; string path;
+    while(true)
+    {
+        if(datapath_dir[step] == ':' || datapath_dir[step] == '\0')
+        {
+            VCM.push_back(VideoCapture(path, CAP_V4L));
+            path.clear();
+            if(datapath_dir[step] != '\0')
+                ++step;
+        }
+        if(datapath_dir[step] == '\0')
+            break;
+        path += datapath_dir[step];
+        ++step;
+    }
+    Mat frame1;
+    int FPS1 = get<0>(GetParam());
+    int FPS2 = get<1>(GetParam());
+
+    EXPECT_TRUE(VCM[0].set(CAP_PROP_FPS, FPS1));
+    EXPECT_TRUE(VCM[1].set(CAP_PROP_FPS, FPS2));
+    for(size_t vc = 0; vc < VCM.size(); ++vc)
+    {
+        ASSERT_TRUE(VCM[vc].isOpened());
+        //launch cameras
+        EXPECT_TRUE(VCM[vc].read(frame1));
+    }
+    std::cout << FPS1 << std::endl;
+    std::cout << FPS2 << std::endl;
+
+    std::vector<int> state(VCM.size());
+
+    std::vector<int> countOfStates1000t0(2, 0);
+
+    int ITERATION_COUNT = 100; //number of expected frames from all cameras
+    int TIMEOUT = -1; // milliseconds
+
+    for(int i = 0; i < ITERATION_COUNT; ++i)
+    {
+        VideoCapture::waitAny(VCM, state, TIMEOUT);
+
+        EXPECT_EQ(VCM.size(), state.size());
+
+        for(unsigned int j = 0; j < VCM.size(); ++j)
+        {
+            Mat frame;
+            if(state[j] == CAP_CAM_READY)
+            {
+                 EXPECT_TRUE(VCM[j].retrieve(frame1));
+                 ++countOfStates1000t0[j];
+            }
+        }
+    }
+    EXPECT_TRUE( fabs(((float)FPS1 / (float)FPS2 - (float)countOfStates1000t0[0] / (float)countOfStates1000t0[1])) < 1 );
+}
+
+INSTANTIATE_TEST_CASE_P(, DISABLED_videoio_fps, testing::Combine(testing::Values(30, 15), testing::Values(5, 15)));
 
 }} // namespace

@@ -228,6 +228,8 @@ make & enjoy!
 #include <sys/ioctl.h>
 #include <limits>
 
+#include <poll.h>
+
 #ifdef HAVE_CAMV4L2
 #include <asm/types.h>          /* for videodev2.h */
 #include <linux/videodev2.h>
@@ -260,10 +262,6 @@ typedef uint32_t __u32;
 #endif
 #ifndef V4L2_CID_IRIS_ABSOLUTE
 #define V4L2_CID_IRIS_ABSOLUTE (V4L2_CID_CAMERA_CLASS_BASE+17)
-#endif
-
-#ifndef V4L2_PIX_FMT_Y10
-#define V4L2_PIX_FMT_Y10 v4l2_fourcc('Y', '1', '0', ' ')
 #endif
 
 /* Defaults - If your board can do better, set it here.  Set for the most common type inputs. */
@@ -347,6 +345,8 @@ struct CvCaptureCAM_V4L CV_FINAL : public CvCapture
     virtual bool setProperty(int, double) CV_OVERRIDE;
     virtual bool grabFrame() CV_OVERRIDE;
     virtual IplImage* retrieveFrame(int) CV_OVERRIDE;
+    virtual bool camerasPoll(const std::vector<CvCapture*>&, std::vector<int>&, int64_t)  CV_OVERRIDE;
+    bool setFirstCapture();
 
     CvCaptureCAM_V4L();
     virtual ~CvCaptureCAM_V4L();
@@ -357,6 +357,7 @@ struct CvCaptureCAM_V4L CV_FINAL : public CvCapture
     bool initCapture();
     bool streaming(bool startStream);
     bool setFps(int value);
+    bool deviceHandlePoll(const std::vector<int>&, std::vector<int>&, int64_t);
     bool tryIoctl(unsigned long ioctlCode, void *parameter) const;
     bool controlInfo(int property_id, __u32 &v4l2id, cv::Range &range) const;
     bool icvControl(__u32 v4l2id, int &value, bool isSet) const;
@@ -504,8 +505,7 @@ bool CvCaptureCAM_V4L::autosetup_capture_mode_v4l2()
             V4L2_PIX_FMT_JPEG,
 #endif
             V4L2_PIX_FMT_Y16,
-            V4L2_PIX_FMT_Y10,
-            V4L2_PIX_FMT_GREY,
+            V4L2_PIX_FMT_GREY
     };
 
     for (size_t i = 0; i < sizeof(try_order) / sizeof(__u32); i++) {
@@ -552,7 +552,6 @@ bool CvCaptureCAM_V4L::convertableToRgb() const
     case V4L2_PIX_FMT_SGBRG8:
     case V4L2_PIX_FMT_RGB24:
     case V4L2_PIX_FMT_Y16:
-    case V4L2_PIX_FMT_Y10:
     case V4L2_PIX_FMT_GREY:
     case V4L2_PIX_FMT_BGR24:
         return true;
@@ -587,7 +586,6 @@ void CvCaptureCAM_V4L::v4l2_create_frame()
             size.height = size.height * 3 / 2; // "1.5" channels
             break;
         case V4L2_PIX_FMT_Y16:
-        case V4L2_PIX_FMT_Y10:
             depth = IPL_DEPTH_16U;
             /* fallthru */
         case V4L2_PIX_FMT_GREY:
@@ -796,10 +794,11 @@ bool CvCaptureCAM_V4L::open(int _index)
         name = cv::format("/dev/video%d", _index);
     }
 
+    /* Print the CameraNumber at the end of the string with a width of one character */
     bool res = open(name.c_str());
     if (!res)
     {
-        CV_LOG_WARNING(NULL, cv::format("VIDEOIO ERROR: V4L: can't open camera by index %d", _index));
+        fprintf(stderr, "VIDEOIO ERROR: V4L: can't open camera by index %d\n", _index);
     }
     return res;
 }
@@ -885,6 +884,112 @@ bool CvCaptureCAM_V4L::tryIoctl(unsigned long ioctlCode, void *parameter) const
             perror("select");
     }
     return true;
+}
+
+bool CvCaptureCAM_V4L::deviceHandlePoll(const std::vector<int>& deviceHandles, std::vector<int>& state, int64_t timeout)
+{
+     if(!deviceHandles.empty())
+     {
+        const auto poll_flags = POLLIN | POLLRDNORM | POLLERR;
+
+        std::vector<pollfd> fds;
+
+        for(const auto& dhand_num : deviceHandles)
+        {
+            if(dhand_num)
+            {
+                fds.push_back(pollfd{dhand_num, poll_flags, 0});
+            }
+            else
+                return false;
+        }
+        int ret = poll(fds.data(), fds.size(), timeout);
+
+        if(ret == -1)
+        {
+            perror("poll error");
+            return false;
+        }
+
+        for (size_t struct_num = 0; struct_num < fds.size(); ++struct_num)
+        {
+            if (ret != 0)
+            {
+                if((fds[struct_num].revents & (POLLIN | POLLRDNORM)) != 0)
+                {
+                    state[struct_num] = CAP_CAM_READY;
+                }
+                else
+                    if((fds[struct_num].revents & POLLERR) != 0)
+                    {
+                        state[struct_num] = CAP_CAM_ERROR;
+                    }
+                    else
+                        state[struct_num] = CAP_CAM_NOT_READY;
+            }
+            else
+                state[struct_num] = CAP_CAM_NOT_READY;
+        }
+     }
+     return true;
+}
+
+bool CvCaptureCAM_V4L::camerasPoll(const std::vector<CvCapture*>& pointers, std::vector<int>& state, int64_t timeout)
+{
+    if(!pointers.empty())
+    {
+        std::vector<int> deviceHandles;
+        for(const auto& ptr_num : pointers)
+        {
+            if(ptr_num)
+            {
+                CV_DbgAssert(dynamic_cast< CvCaptureCAM_V4L * >(ptr_num) != nullptr);
+                CvCaptureCAM_V4L *ptr = static_cast<CvCaptureCAM_V4L * >(ptr_num);
+                deviceHandles.push_back(ptr->deviceHandle);
+                ptr->setFirstCapture();
+            }
+            else
+                return false;
+        }
+        CV_DbgAssert(dynamic_cast< CvCaptureCAM_V4L * >(pointers[0]) != nullptr);
+        CvCaptureCAM_V4L *ptr = static_cast<CvCaptureCAM_V4L * >(pointers[0]);
+        if(ptr->deviceHandlePoll(deviceHandles, state, timeout))
+                return true;
+    }
+    return false;
+}
+
+bool CvCaptureCAM_V4L::setFirstCapture()
+{
+    if (FirstCapture)
+    {
+        bufferIndex = -1;
+        for (__u32 index = 0; index < req.count; ++index)
+        {
+            v4l2_buffer buf = v4l2_buffer();
+
+            buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+            buf.memory = V4L2_MEMORY_MMAP;
+            buf.index = index;
+
+            if (!tryIoctl(VIDIOC_QBUF, &buf))
+            {
+                perror("VIDIOC_QBUF");
+                return false;
+            }
+        }
+
+        if(!streaming(true))
+        {
+            /* error enabling the stream */
+            perror("VIDIOC_STREAMON");
+            return false;
+        }
+        /* preparation is ok */
+        FirstCapture = false;
+        return true;
+    }
+    return false;
 }
 
 bool CvCaptureCAM_V4L::grabFrame()
@@ -1458,13 +1563,6 @@ void CvCaptureCAM_V4L::convertToRgb(const Buffer &currentBuffer)
     {
         cv::Mat temp(imageSize, CV_8UC1, buffers[MAX_V4L_BUFFERS].start);
         cv::Mat(imageSize, CV_16UC1, currentBuffer.start).convertTo(temp, CV_8U, 1.0 / 256);
-        cv::cvtColor(temp, destination, COLOR_GRAY2BGR);
-        return;
-    }
-    case V4L2_PIX_FMT_Y10:
-    {
-        cv::Mat temp(imageSize, CV_8UC1, buffers[MAX_V4L_BUFFERS].start);
-        cv::Mat(imageSize, CV_16UC1, currentBuffer.start).convertTo(temp, CV_8U, 1.0 / 4);
         cv::cvtColor(temp, destination, COLOR_GRAY2BGR);
         return;
     }

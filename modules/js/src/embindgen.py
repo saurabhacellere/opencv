@@ -98,7 +98,7 @@ core = {'': ['absdiff', 'add', 'addWeighted', 'bitwise_and', 'bitwise_not', 'bit
              'compare', 'convertScaleAbs', 'copyMakeBorder', 'countNonZero', 'determinant', 'dft', 'divide', 'eigen', \
              'exp', 'flip', 'getOptimalDFTSize','gemm', 'hconcat', 'inRange', 'invert', 'kmeans', 'log', 'magnitude', \
              'max', 'mean', 'meanStdDev', 'merge', 'min', 'minMaxLoc', 'mixChannels', 'multiply', 'norm', 'normalize', \
-             'perspectiveTransform', 'polarToCart', 'pow', 'randn', 'randu', 'reduce', 'repeat', 'rotate', 'setIdentity', 'setRNGSeed', \
+             'perspectiveTransform', 'polarToCart', 'pow', 'randn', 'randu', 'reduce', 'repeat', 'setIdentity', 'setRNGSeed', \
              'solve', 'solvePoly', 'split', 'sqrt', 'subtract', 'trace', 'transform', 'transpose', 'vconcat'],
         'Algorithm': []}
 
@@ -112,7 +112,7 @@ imgproc = {'': ['Canny', 'GaussianBlur', 'Laplacian', 'HoughLines', 'HoughLinesP
                 'goodFeaturesToTrack','grabCut','initUndistortRectifyMap', 'integral','integral2', 'isContourConvex', 'line', \
                 'matchShapes', 'matchTemplate','medianBlur', 'minAreaRect', 'minEnclosingCircle', 'moments', 'morphologyEx', \
                 'pointPolygonTest', 'putText','pyrDown','pyrUp','rectangle','remap', 'resize','sepFilter2D','threshold', \
-                'undistort','warpAffine','warpPerspective','warpPolar','watershed', \
+                'undistort','warpAffine','warpPerspective','watershed', \
                 'fillPoly', 'fillConvexPoly'],
            'CLAHE': ['apply', 'collectGarbage', 'getClipLimit', 'getTilesGridSize', 'setClipLimit', 'setTilesGridSize']}
 
@@ -145,7 +145,7 @@ features2d = {'Feature2D': ['detect', 'compute', 'detectAndCompute', 'descriptor
 
 photo = {'': ['createAlignMTB', 'createCalibrateDebevec', 'createCalibrateRobertson', \
               'createMergeDebevec', 'createMergeMertens', 'createMergeRobertson', \
-              'createTonemapDrago', 'createTonemapMantiuk', 'createTonemapReinhard', 'inpaint'],
+              'createTonemapDrago', 'createTonemapMantiuk', 'createTonemapReinhard'],
         'CalibrateCRF': ['process'],
         'AlignMTB' : ['calculateShift', 'shiftMat', 'computeBitmaps', 'getMaxBits', 'setMaxBits', \
                       'getExcludeRange', 'setExcludeRange', 'getCut', 'setCut'],
@@ -171,7 +171,17 @@ aruco = {'': ['detectMarkers', 'drawDetectedMarkers', 'drawAxis', 'estimatePoseS
         'aruco_CharucoBoard': ['create', 'draw'],
         }
 
-calib3d = {'': ['findHomography', 'calibrateCameraExtended', 'drawFrameAxes', 'estimateAffine2D', 'getDefaultNewCameraMatrix', 'initUndistortRectifyMap', 'Rodrigues']}
+# added solvePnP & projectPoints
+calib3d = {'': ['findHomography','calibrateCameraExtended', 'drawFrameAxes', 'getDefaultNewCameraMatrix', 'initUndistortRectifyMap',
+               'solvePnP','projectPoints']}
+
+# added face module
+face = {'': ['createFacemarkLBF', 'createFacemarkAAM', 'createFacemarkKazemi', 'drawFacemarks'],
+        'Facemark': ['fit', 'loadModel'],
+        'FacemarkLBF': [],
+        'FacemarkAAM'': [],
+        'FacemarkKazemi': [],
+        }
 
 def makeWhiteList(module_list):
     wl = {}
@@ -183,7 +193,7 @@ def makeWhiteList(module_list):
                 wl[k] = m[k]
     return wl
 
-white_list = makeWhiteList([core, imgproc, objdetect, video, dnn, features2d, photo, aruco, calib3d])
+white_list = makeWhiteList([core, imgproc, objdetect, video, dnn, features2d, photo, aruco, calib3d, face])
 
 # Features to be exported
 export_enums = False

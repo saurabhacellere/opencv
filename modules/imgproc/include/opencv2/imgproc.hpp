@@ -2418,16 +2418,7 @@ coordinate origin is assumed to be the top-left corner).
 
 @sa  getAffineTransform, warpAffine, transform
  */
-CV_EXPORTS_W Mat getRotationMatrix2D(Point2f center, double angle, double scale);
-
-/** @sa getRotationMatrix2D */
-CV_EXPORTS Matx23d getRotationMatrix2D_(Point2f center, double angle, double scale);
-
-inline
-Mat getRotationMatrix2D(Point2f center, double angle, double scale)
-{
-    return Mat(getRotationMatrix2D_(center, angle, scale), true);
-}
+CV_EXPORTS_W Mat getRotationMatrix2D( Point2f center, double angle, double scale );
 
 /** @brief Calculates an affine transform from three pairs of the corresponding points.
 
@@ -4217,8 +4208,7 @@ enum ColormapTypes
     COLORMAP_VIRIDIS = 16, //!< ![viridis](pics/colormaps/colorscale_viridis.jpg)
     COLORMAP_CIVIDIS = 17, //!< ![cividis](pics/colormaps/colorscale_cividis.jpg)
     COLORMAP_TWILIGHT = 18, //!< ![twilight](pics/colormaps/colorscale_twilight.jpg)
-    COLORMAP_TWILIGHT_SHIFTED = 19, //!< ![twilight shifted](pics/colormaps/colorscale_twilight_shifted.jpg)
-    COLORMAP_TURBO = 20 //!< ![turbo](pics/colormaps/colorscale_turbo.jpg)
+    COLORMAP_TWILIGHT_SHIFTED = 19 //!< ![twilight shifted](pics/colormaps/colorscale_twilight_shifted.jpg)
 };
 
 /** @example samples/cpp/falsecolor.cpp
@@ -4390,9 +4380,9 @@ marker types are supported, see #MarkerTypes for more information.
 @param line_type Type of the line, See #LineTypes
 @param markerSize The length of the marker axis [default = 20 pixels]
  */
-CV_EXPORTS_W void drawMarker(InputOutputArray img, Point position, const Scalar& color,
-                             int markerType = MARKER_CROSS, int markerSize=20, int thickness=1,
-                             int line_type=8);
+//CV_EXPORTS_W void drawMarker(InputOutputArray img, Point position, const Scalar& color,
+  //                           int markerType = MARKER_CROSS, int markerSize=20, int thickness=1,
+         //                    int line_type=8);
 
 /* ----------------------------------------------------------------------------------------- */
 /* END OF MARKER SECTION */

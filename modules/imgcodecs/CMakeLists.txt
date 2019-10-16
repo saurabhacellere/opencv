@@ -116,8 +116,8 @@ if(APPLE_FRAMEWORK)
   list(APPEND IMGCODECS_LIBRARIES "-framework UIKit")
 endif()
 
-if(TRUE)
-  # these variables are set by 'ocv_append_build_options(IMGCODECS ...)'
+if(UNIX)
+  #these variables are set by CHECK_MODULE macro
   foreach(P ${IMGCODECS_INCLUDE_DIRS})
     ocv_include_directories(${P})
   endforeach()

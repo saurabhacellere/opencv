@@ -9,8 +9,8 @@
 
 #include <ade/graph.hpp>
 
-#include <opencv2/gapi/gproto.hpp> // can_describe
-#include <opencv2/gapi/gcompiled.hpp>
+#include "opencv2/gapi/gproto.hpp" // descr_of
+#include "opencv2/gapi/gcompiled.hpp"
 
 #include "compiler/gcompiled_priv.hpp"
 #include "backends/common/gbackend.hpp"
@@ -50,10 +50,11 @@ const cv::GMetaArgs& cv::GCompiled::Priv::outMetas() const
 
 void cv::GCompiled::Priv::checkArgs(const cv::gimpl::GRuntimeArgs &args) const
 {
-    if (!can_describe(m_metas, args.inObjs))
+    const auto runtime_metas = descr_of(args.inObjs);
+    if (runtime_metas != m_metas)
     {
-        util::throw_error(std::logic_error("This object was compiled "
-                                           "for different metadata!"));
+      util::throw_error(std::logic_error("This object was compiled "
+                                         "for different metadata!"));
         // FIXME: Add details on what is actually wrong
     }
 }

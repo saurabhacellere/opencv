@@ -1699,11 +1699,6 @@ Mat_<_Tp>::Mat_(const std::array<_Tp, _Nm>& arr, bool copyData)
 template<typename _Tp> inline
 Mat_<_Tp>& Mat_<_Tp>::operator = (const Mat& m)
 {
-    if (m.empty())
-    {
-        release();
-        return *this;
-    }
     if( traits::Type<_Tp>::value == m.type() )
     {
         Mat::operator = (m);
@@ -1769,7 +1764,7 @@ Mat_<_Tp> Mat_<_Tp>::cross(const Mat_& m) const
 template<typename _Tp> template<typename T2> inline
 Mat_<_Tp>::operator Mat_<T2>() const
 {
-    return Mat_<T2>(static_cast<const Mat&>(*this));
+    return Mat_<T2>(*this);
 }
 
 template<typename _Tp> inline
@@ -2059,7 +2054,7 @@ void Mat_<_Tp>::forEach(const Functor& operation) const {
 
 template<typename _Tp> inline
 Mat_<_Tp>::Mat_(Mat_&& m)
-    : Mat(std::move(m))
+    : Mat(m)
 {
 }
 
@@ -2075,17 +2070,12 @@ Mat_<_Tp>::Mat_(Mat&& m)
     : Mat()
 {
     flags = (flags & ~CV_MAT_TYPE_MASK) + traits::Type<_Tp>::value;
-    *this = std::move(m);
+    *this = m;
 }
 
 template<typename _Tp> inline
 Mat_<_Tp>& Mat_<_Tp>::operator = (Mat&& m)
 {
-    if (m.empty())
-    {
-        release();
-        return *this;
-    }
     if( traits::Type<_Tp>::value == m.type() )
     {
         Mat::operator = ((Mat&&)m);

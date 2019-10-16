@@ -5,31 +5,19 @@
 // Copyright (C) 2018 Intel Corporation
 
 
-#ifndef OPENCV_GAPI_GOBJREF_HPP
-#define OPENCV_GAPI_GOBJREF_HPP
+#ifndef OPENCV_GAPI_GMATREF_HPP
+#define OPENCV_GAPI_GMATREF_HPP
 
 #include "opencv2/gapi/util/variant.hpp"
 #include "opencv2/gapi/garg.hpp"
+
+#include "api/gapi_priv.hpp" // GShape, HostCtor
 
 namespace cv
 {
 
 namespace gimpl
 {
-    // Union type for various user-defined type constructors (GArray<T>, etc)
-    // FIXME: Replace construct-only API with a more generic one
-    //    (probably with bits of introspection)
-    // Not required for non-user-defined types (GMat, GScalar, etc)
-    using HostCtor = util::variant
-    < util::monostate
-    , detail::ConstructVec
-    >;
-
-    using ConstVal = util::variant
-    < util::monostate
-    , cv::gapi::own::Scalar
-    >;
-
     struct RcDesc
     {
         int      id;      // id is unique but local to shape
@@ -59,4 +47,4 @@ namespace detail
 
 } // cv
 
-#endif // OPENCV_GAPI_GOBJREF_HPP
+#endif // OPENCV_GAPI_GMATREF_HPP

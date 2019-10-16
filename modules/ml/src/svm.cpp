@@ -1613,7 +1613,6 @@ public:
 
     bool train( const Ptr<TrainData>& data, int ) CV_OVERRIDE
     {
-        CV_Assert(!data.empty());
         clear();
 
         checkParams();
@@ -1740,7 +1739,6 @@ public:
                     ParamGrid nu_grid, ParamGrid coef_grid, ParamGrid degree_grid,
                     bool balanced ) CV_OVERRIDE
     {
-        CV_Assert(!data.empty());
         checkParams();
 
         int svmType = params.svmType;

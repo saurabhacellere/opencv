@@ -41,109 +41,116 @@
 
 #include "precomp.hpp"
 
-#include "grfmt_base.hpp"
-#include "bitstrm.hpp"
+#include "path.hpp"
 
 namespace cv
 {
 
-BaseImageDecoder::BaseImageDecoder()
+Path::Path( const String& value )
 {
-    m_width = m_height = 0;
-    m_type = -1;
-    m_buf_supported = false;
-    m_scale_denom = 1;
+#if defined _WIN32
+    m_path = toWString( value );
+#else
+    m_path = value;
+#endif
 }
 
-bool BaseImageDecoder::setSource( const Path& filename )
+Path::Path( const String::value_type* value )
 {
-    m_filename = filename;
-    m_buf.release();
-    return true;
+#if defined _WIN32
+    m_path = toWString( value );
+#else
+    m_path = value;
+#endif
 }
 
-bool BaseImageDecoder::setSource( const Mat& buf )
+Path::Path( const WString& value )
 {
-    if( !m_buf_supported )
-        return false;
-    m_filename = Path();
-    m_buf = buf;
-    return true;
+#if defined _WIN32
+    m_path = value;
+#else
+    m_path = toString( value );
+#endif
 }
 
-size_t BaseImageDecoder::signatureLength() const
+Path::Path( const WString::value_type* value )
 {
-    return m_signature.size();
+#if defined _WIN32
+    m_path = value;
+#else
+    m_path = toString( value );
+#endif
 }
 
-bool BaseImageDecoder::checkSignature( const String& signature ) const
+Path::Path( const Path& rhs )
 {
-    size_t len = signatureLength();
-    return signature.size() >= len && memcmp( signature.c_str(), m_signature.c_str(), len ) == 0;
+    m_path = rhs.m_path;
 }
 
-int BaseImageDecoder::setScale( const int& scale_denom )
+Path& Path::operator=( const Path& rhs )
 {
-    int temp = m_scale_denom;
-    m_scale_denom = scale_denom;
-    return temp;
+    m_path = rhs.m_path;
+    return(*this);
 }
 
-ImageDecoder BaseImageDecoder::newDecoder() const
+size_t Path::size() const
 {
-    return ImageDecoder();
+    return( m_path.size() );
 }
 
-BaseImageEncoder::BaseImageEncoder()
+bool Path::empty() const
 {
-    m_buf = 0;
-    m_buf_supported = false;
+    return( m_path.empty() );
 }
 
-bool  BaseImageEncoder::isFormatSupported( int depth ) const
+const Path::PathType::value_type* Path::c_str() const
 {
-    return depth == CV_8U;
+    return( m_path.c_str() );
 }
 
-String BaseImageEncoder::getDescription() const
+void Path::tempPath()
 {
-    return m_description;
+#if defined _WIN32
+    m_path = tempfileW();
+#else
+    m_path = tempfile();
+#endif
 }
 
-bool BaseImageEncoder::setDestination( const Path& filename )
+FILE* Path::openPath( const Path& mode ) const
 {
-    m_filename = filename;
-    m_buf = 0;
-    return true;
+#if defined _WIN32
+    return( _wfopen( m_path.c_str(), mode.c_str() ) );
+#else
+    return( fopen( m_path.c_str(), mode.c_str() ) );
+#endif
 }
 
-bool BaseImageEncoder::setDestination( std::vector<uchar>& buf )
+int Path::removePath() const
 {
-    if( !m_buf_supported )
-        return false;
-    m_buf = &buf;
-    m_buf->clear();
-    m_filename = Path();
-    return true;
+#if defined _WIN32
+    return(_wremove( m_path.c_str() ));
+#else
+    return(remove( m_path.c_str() ));
+#endif
 }
 
-bool BaseImageEncoder::writemulti(const std::vector<Mat>&, const std::vector<int>& )
+String Path::string() const
 {
-    return false;
+#if defined _WIN32
+    return( toString( m_path ) );
+#else
+    return( m_path );
+#endif
 }
 
-ImageEncoder BaseImageEncoder::newEncoder() const
+WString Path::wstring() const
 {
-    return ImageEncoder();
-}
-
-void BaseImageEncoder::throwOnEror() const
-{
-    if(!m_last_error.empty())
-    {
-        String msg = "Raw image encoder error: " + m_last_error;
-        CV_Error( Error::BadImageSize, msg.c_str() );
-    }
+#if defined _WIN32
+    return( m_path );
+#else
+    return( toWString( m_path ) );
+#endif
 }
 
 }

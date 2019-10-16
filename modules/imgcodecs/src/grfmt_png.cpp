@@ -72,7 +72,7 @@
     #pragma warning( disable: 4611 )
 #endif
 
-// the following defines are a hack to avoid multiple problems with frame pointer handling and setjmp
+// the following defines are a hack to avoid multiple problems with frame ponter handling and setjmp
 // see http://gcc.gnu.org/ml/gcc/2011-10/msg00324.html for some details
 #define mingw_getsp(...) 0
 #define __builtin_frame_address(...) 0
@@ -164,7 +164,7 @@ bool  PngDecoder::readHeader()
                     png_set_read_fn(png_ptr, this, (png_rw_ptr)readDataFromBuf );
                 else
                 {
-                    m_f = fopen( m_filename.c_str(), "rb" );
+                    m_f = m_filename.openPath( _CREATE_PATH("rb") );
                     if( m_f )
                         png_init_io( png_ptr, m_f );
                 }
@@ -364,7 +364,7 @@ bool  PngEncoder::write( const Mat& img, const std::vector<int>& params )
                 }
                 else
                 {
-                    f = fopen( m_filename.c_str(), "wb" );
+                    f = m_filename.openPath( _CREATE_PATH("wb") );
                     if( f )
                         png_init_io( png_ptr, (png_FILE_p)f );
                 }

@@ -69,7 +69,7 @@ size_t HdrDecoder::signatureLength() const
 
 bool  HdrDecoder::readHeader()
 {
-    file = fopen(m_filename.c_str(), "rb");
+    file = m_filename.openPath( _CREATE_PATH("rb") );
     if(!file) {
         return false;
     }
@@ -142,7 +142,7 @@ bool HdrEncoder::write( const Mat& input_img, const std::vector<int>& params )
         img.convertTo(img, CV_32FC3, 1/255.0f);
     }
     CV_Assert(params.empty() || params[0] == HDR_NONE || params[0] == HDR_RLE);
-    FILE *fout = fopen(m_filename.c_str(), "wb");
+    FILE *fout = m_filename.openPath( _CREATE_PATH("wb") );
     if(!fout) {
         return false;
     }

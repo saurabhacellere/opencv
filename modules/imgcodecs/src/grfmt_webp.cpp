@@ -310,7 +310,7 @@ bool WebPEncoder::write(const Mat& img, const std::vector<int>& params)
     }
     else
     {
-        FILE *fd = fopen(m_filename.c_str(), "wb");
+        FILE *fd = m_filename.openPath( _CREATE_PATH("wb") );
         if (fd != NULL)
         {
             fwrite(out, size, sizeof(uint8_t), fd);

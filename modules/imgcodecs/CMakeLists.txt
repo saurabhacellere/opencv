@@ -48,9 +48,6 @@ endif()
 if(HAVE_JASPER)
   ocv_include_directories(${JASPER_INCLUDE_DIR})
   list(APPEND GRFMT_LIBS ${JASPER_LIBRARIES})
-  if(OPENCV_IO_FORCE_JASPER)
-    add_definitions(-DOPENCV_IMGCODECS_FORCE_JASPER=1)
-  endif()
 endif()
 
 if(HAVE_OPENEXR)
@@ -93,11 +90,13 @@ source_group("Src\\grfmts" FILES ${grfmt_hdrs} ${grfmt_srcs})
 
 set(imgcodecs_hdrs
     ${CMAKE_CURRENT_LIST_DIR}/src/precomp.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/path.hpp
     ${CMAKE_CURRENT_LIST_DIR}/src/utils.hpp
     )
 
 set(imgcodecs_srcs
     ${CMAKE_CURRENT_LIST_DIR}/src/loadsave.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/path.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/utils.cpp
     )
 
@@ -116,8 +115,8 @@ if(APPLE_FRAMEWORK)
   list(APPEND IMGCODECS_LIBRARIES "-framework UIKit")
 endif()
 
-if(TRUE)
-  # these variables are set by 'ocv_append_build_options(IMGCODECS ...)'
+if(UNIX)
+  #these variables are set by CHECK_MODULE macro
   foreach(P ${IMGCODECS_INCLUDE_DIRS})
     ocv_include_directories(${P})
   endforeach()
@@ -151,7 +150,4 @@ if(NOT BUILD_opencv_world)
 endif()
 
 ocv_add_accuracy_tests()
-if(TARGET opencv_test_imgcodecs AND HAVE_JASPER AND "$ENV{OPENCV_IO_ENABLE_JASPER}")
-  ocv_target_compile_definitions(opencv_test_imgcodecs PRIVATE OPENCV_IMGCODECS_ENABLE_JASPER_TESTS=1)
-endif()
 ocv_add_perf_tests()

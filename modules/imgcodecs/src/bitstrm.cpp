@@ -111,12 +111,12 @@ void  RBaseStream::readBlock()
 }
 
 
-bool  RBaseStream::open( const String& filename )
+bool  RBaseStream::open( const Path& filename )
 {
     close();
     allocate();
 
-    m_file = fopen( filename.c_str(), "rb" );
+    m_file = filename.openPath( _CREATE_PATH("rb") );
     if( m_file )
     {
         m_is_opened = true;
@@ -175,11 +175,8 @@ void  RBaseStream::setPos( int pos )
     }
 
     int offset = pos % m_block_size;
-    int old_block_pos = m_block_pos;
     m_block_pos = pos - offset;
     m_current = m_start + offset;
-    if (old_block_pos != m_block_pos)
-        readBlock();
 }
 
 
@@ -400,12 +397,12 @@ void  WBaseStream::writeBlock()
 }
 
 
-bool  WBaseStream::open( const String& filename )
+bool  WBaseStream::open( const Path& filename )
 {
     close();
     allocate();
 
-    m_file = fopen( filename.c_str(), "wb" );
+    m_file = filename.openPath( _CREATE_PATH("wb") );
     if( m_file )
     {
         m_is_opened = true;

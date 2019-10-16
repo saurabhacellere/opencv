@@ -71,7 +71,7 @@ public:
         op = SUM;
         if (params.has("operation"))
         {
-            String operation = toLowerCase(params.get<String>("operation"));
+            String operation = params.get<String>("operation").toLowerCase();
             if (operation == "prod")
                 op = PROD;
             else if (operation == "sum")
@@ -118,6 +118,38 @@ public:
 
         outputs.assign(1, inputs[0]);
 
+        return false;
+    }
+
+    virtual bool tryFuse(std::vector< Ptr<dnn::Layer> >& bottoms, Ptr<dnn::Layer>& top) CV_OVERRIDE
+    {
+        std::string currLayerType = bottoms[0]->type;
+        // Either all input layers are fusing or nothing.
+        for (int i = 1; i < bottoms.size(); i++)
+        {
+            if (bottoms[0]->type != bottoms[i]->type)
+                return false;
+        }
+
+        std::vector< Ptr<dnn::Layer> > fakeInputs;
+        bool isFused = bottoms[0]->tryFuse(fakeInputs, top);
+        if (isFused)
+        {
+            Mat w, b;
+            top->getScaleShift(w, b);
+            if (!w.empty())
+            {
+                LayerParams weights_lp;
+                weights_lp.blobs.push_back(w);
+                Ptr<Layer> weightsLayer = ScaleLayer::create(weights_lp);
+                weightsLayer->finalize(std::vector<Mat>(1), std::vector<Mat>(1));
+                for (size_t i = 1; i < bottoms.size(); i++)
+                {
+                    CV_Assert(bottoms[i]->tryFuse(bottoms, weightsLayer));
+                }
+            }
+            return true;
+        }
         return false;
     }
 

@@ -2418,16 +2418,7 @@ coordinate origin is assumed to be the top-left corner).
 
 @sa  getAffineTransform, warpAffine, transform
  */
-CV_EXPORTS_W Mat getRotationMatrix2D(Point2f center, double angle, double scale);
-
-/** @sa getRotationMatrix2D */
-CV_EXPORTS Matx23d getRotationMatrix2D_(Point2f center, double angle, double scale);
-
-inline
-Mat getRotationMatrix2D(Point2f center, double angle, double scale)
-{
-    return Mat(getRotationMatrix2D_(center, angle, scale), true);
-}
+CV_EXPORTS_W Mat getRotationMatrix2D( Point2f center, double angle, double scale );
 
 /** @brief Calculates an affine transform from three pairs of the corresponding points.
 
@@ -4008,7 +3999,23 @@ without self-intersections. Otherwise, the function output is undefined.
  */
 CV_EXPORTS_W bool isContourConvex( InputArray contour );
 
-//! finds intersection of two convex polygons
+/** @example samples/cpp/intersectExample.cpp
+Examples of how intersectConvexConvex works
+*/
+
+/** @brief Finds intersection of two convex polygons
+
+@param _p1 First polygon
+@param _p2 Second polygon
+@param _p12 Output polygon describing the intersecting area
+@param handleNested When true, an intersection is found if one of the polygons is fully enclosed in the other.
+When false, no intersection is found. If the polygons share a side or the vertex of one polygon lies on an edge
+of the other, they are not considered nested and an intersection will be found regardless of the value of handleNested.
+
+@returns Absolute value of area of intersecting polygon
+
+@note intersectConvexConvex doesn't confirm that both polygons are convex and will return invalid results if they aren't.
+ */
 CV_EXPORTS_W float intersectConvexConvex( InputArray _p1, InputArray _p2,
                                           OutputArray _p12, bool handleNested = true );
 
@@ -4217,8 +4224,7 @@ enum ColormapTypes
     COLORMAP_VIRIDIS = 16, //!< ![viridis](pics/colormaps/colorscale_viridis.jpg)
     COLORMAP_CIVIDIS = 17, //!< ![cividis](pics/colormaps/colorscale_cividis.jpg)
     COLORMAP_TWILIGHT = 18, //!< ![twilight](pics/colormaps/colorscale_twilight.jpg)
-    COLORMAP_TWILIGHT_SHIFTED = 19, //!< ![twilight shifted](pics/colormaps/colorscale_twilight_shifted.jpg)
-    COLORMAP_TURBO = 20 //!< ![turbo](pics/colormaps/colorscale_turbo.jpg)
+    COLORMAP_TWILIGHT_SHIFTED = 19 //!< ![twilight shifted](pics/colormaps/colorscale_twilight_shifted.jpg)
 };
 
 /** @example samples/cpp/falsecolor.cpp

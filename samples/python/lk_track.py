@@ -23,7 +23,6 @@ from __future__ import print_function
 
 import numpy as np
 import cv2 as cv
-
 import video
 from common import anorm2, draw_str
 from time import clock
@@ -39,6 +38,7 @@ feature_params = dict( maxCorners = 500,
 
 class App:
     def __init__(self, video_src):
+        cv.namedWindow('lk_track', cv.WINDOW_NORMAL)
         self.track_len = 10
         self.detect_interval = 5
         self.tracks = []
@@ -97,11 +97,9 @@ def main():
     except:
         video_src = 0
 
+    print(__doc__)
     App(video_src).run()
-    print('Done')
-
+    cv.destroyAllWindows()
 
 if __name__ == '__main__':
-    print(__doc__)
     main()
-    cv.destroyAllWindows()

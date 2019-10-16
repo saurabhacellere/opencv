@@ -43,7 +43,6 @@
 
 #include "precomp.hpp"
 #include "opencl_kernels_core.hpp"
-#include <atomic>
 #include <limits>
 #include <iostream>
 #include "mathfuncs.hpp"
@@ -55,9 +54,9 @@ typedef void (*MathFunc)(const void* src, void* dst, int len);
 
 #ifdef HAVE_OPENCL
 
-enum { OCL_OP_LOG=0, OCL_OP_EXP=1, OCL_OP_MAG=2, OCL_OP_PHASE_DEGREES=3, OCL_OP_PHASE_RADIANS=4 };
+enum { OCL_OP_LOG=0, OCL_OP_EXP=1, OCL_OP_MAG=2, OCL_OP_PHASE_DEGREES=3, OCL_OP_PHASE_RADIANS=4, OCL_OP_MAG_SQR=5 };
 
-static const char* oclop2str[] = { "OP_LOG", "OP_EXP", "OP_MAG", "OP_PHASE_DEGREES", "OP_PHASE_RADIANS", 0 };
+static const char* oclop2str[] = { "OP_LOG", "OP_EXP", "OP_MAG", "OP_PHASE_DEGREES", "OP_PHASE_RADIANS", "OP_MAG_SQR", 0 };
 
 static bool ocl_math_op(InputArray _src1, InputArray _src2, OutputArray _dst, int oclop)
 {
@@ -176,6 +175,42 @@ void magnitude( InputArray src1, InputArray src2, OutputArray dst )
             const double *x = (const double*)ptrs[0], *y = (const double*)ptrs[1];
             double *mag = (double*)ptrs[2];
             hal::magnitude64f( x, y, mag, len );
+        }
+    }
+}
+
+void magnitudeSqr( InputArray src1, InputArray src2, OutputArray dst )
+{
+    CV_INSTRUMENT_REGION();
+
+    int type = src1.type(), depth = src1.depth(), cn = src1.channels();
+    CV_Assert( src1.size() == src2.size() && type == src2.type() && (depth == CV_32F || depth == CV_64F));
+
+    CV_OCL_RUN(dst.isUMat() && src1.dims() <= 2 && src2.dims() <= 2,
+               ocl_math_op(src1, src2, dst, OCL_OP_MAG_SQR))
+
+    Mat X = src1.getMat(), Y = src2.getMat();
+    dst.create(X.dims, X.size, X.type());
+    Mat Mag = dst.getMat();
+
+    const Mat* arrays[] = {&X, &Y, &Mag, 0};
+    uchar* ptrs[3] = {};
+    NAryMatIterator it(arrays, ptrs);
+    int len = (int)it.size*cn;
+
+    for( size_t i = 0; i < it.nplanes; i++, ++it )
+    {
+        if( depth == CV_32F )
+        {
+            const float *x = (const float*)ptrs[0], *y = (const float*)ptrs[1];
+            float *mag = (float*)ptrs[2];
+            hal::magnitudeSqr32f( x, y, mag, len );
+        }
+        else
+        {
+            const double *x = (const double*)ptrs[0], *y = (const double*)ptrs[1];
+            double *mag = (double*)ptrs[2];
+            hal::magnitudeSqr64f( x, y, mag, len );
         }
     }
 }
@@ -2120,8 +2155,8 @@ const double* getExpTab64f()
 const float* getExpTab32f()
 {
     static float CV_DECL_ALIGNED(64) expTab_f[EXPTAB_MASK+1];
-    static std::atomic<bool> expTab_f_initialized(false);
-    if (!expTab_f_initialized.load())
+    static volatile bool expTab_f_initialized = false;
+    if (!expTab_f_initialized)
     {
         for( int j = 0; j <= EXPTAB_MASK; j++ )
             expTab_f[j] = (float)expTab[j];
@@ -2402,8 +2437,8 @@ const double* getLogTab64f()
 const float* getLogTab32f()
 {
     static float CV_DECL_ALIGNED(64) logTab_f[(LOGTAB_MASK+1)*2];
-    static std::atomic<bool> logTab_f_initialized(false);
-    if (!logTab_f_initialized.load())
+    static volatile bool logTab_f_initialized = false;
+    if (!logTab_f_initialized)
     {
         for (int j = 0; j < (LOGTAB_MASK+1)*2; j++)
             logTab_f[j] = (float)logTab[j];

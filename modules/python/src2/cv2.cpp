@@ -148,7 +148,6 @@ typedef std::vector<UMat> vector_UMat;
 typedef std::vector<DMatch> vector_DMatch;
 typedef std::vector<String> vector_String;
 typedef std::vector<Scalar> vector_Scalar;
-
 typedef std::vector<std::vector<char> > vector_vector_char;
 typedef std::vector<std::vector<Point> > vector_vector_Point;
 typedef std::vector<std::vector<Point2f> > vector_vector_Point2f;
@@ -750,6 +749,15 @@ template<>
 PyObject* pyopencv_from(const Size_<float>& sz)
 {
     return Py_BuildValue("(ff)", sz.width, sz.height);
+}
+
+template<>
+bool pyopencv_to(PyObject* obj, Rect& r, const char* name)
+{
+    CV_UNUSED(name);
+    if(!obj || obj == Py_None)
+        return true;
+    return PyArg_ParseTuple(obj, "iiii", &r.x, &r.y, &r.width, &r.height) > 0;
 }
 
 template<>
@@ -1356,25 +1364,6 @@ template<> struct pyopencvVecConverter<RotatedRect>
         return pyopencv_from_generic_vec(value);
     }
 };
-
-template<>
-bool pyopencv_to(PyObject* obj, Rect& r, const char* name)
-{
-    CV_UNUSED(name);
-    if(!obj || obj == Py_None)
-        return true;
-
-    if (PyTuple_Check(obj))
-        return PyArg_ParseTuple(obj, "iiii", &r.x, &r.y, &r.width, &r.height) > 0;
-    else
-    {
-        std::vector<int> value(4);
-        pyopencvVecConverter<int>::to(obj, value, ArgInfo(name, 0));
-        r = Rect(value[0], value[1], value[2], value[3]);
-        return true;
-    }
-
-}
 
 template<>
 bool pyopencv_to(PyObject *obj, TermCriteria& dst, const char *name)

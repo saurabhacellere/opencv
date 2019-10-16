@@ -233,14 +233,9 @@ TEST_P(Test_Caffe_layers, Dropout)
 
 TEST_P(Test_Caffe_layers, Concat)
 {
-#if defined(INF_ENGINE_RELEASE)
-#if INF_ENGINE_VER_MAJOR_GE(2019010000) && INF_ENGINE_VER_MAJOR_LT(2019020000)
+#if defined(INF_ENGINE_RELEASE) && INF_ENGINE_VER_MAJOR_GE(2019010000)
     if (backend == DNN_BACKEND_INFERENCE_ENGINE && target == DNN_TARGET_MYRIAD)
         applyTestTag(CV_TEST_TAG_DNN_SKIP_IE_MYRIAD, CV_TEST_TAG_DNN_SKIP_IE_2019R1, CV_TEST_TAG_DNN_SKIP_IE_2019R1_1);
-#elif INF_ENGINE_VER_MAJOR_EQ(2019020000)
-    if (backend == DNN_BACKEND_INFERENCE_ENGINE && target == DNN_TARGET_OPENCL)
-        applyTestTag(CV_TEST_TAG_DNN_SKIP_IE_OPENCL, CV_TEST_TAG_DNN_SKIP_IE_2019R2);
-#endif
 #endif
     testLayerUsingCaffeModels("layer_concat");
     testLayerUsingCaffeModels("layer_concat_optim", true, false);
@@ -459,55 +454,6 @@ TEST(Layer_RNN_Test_Accuracy_with_, CaffeRecurrent)
 
     Mat h_ref = blobFromNPY(_tf("rnn.prototxt.h_1.npy"));
     normAssert(h_ref, output[0]);
-}
-
-TEST(Layer_LSTM_Test_Accuracy_, Reverse)
-{
-    // This handcrafted setup calculates (approximately) the prefix sum of the
-    // input, assuming the inputs are suitably small.
-    cv::Mat input(2, 1, CV_32FC1);
-    input.at<float>(0, 0) = 1e-5f;
-    input.at<float>(1, 0) = 2e-5f;
-
-    cv::Mat Wx(4, 1, CV_32FC1);
-    Wx.at<float>(0, 0) = 0.f;  // Input gate
-    Wx.at<float>(1, 0) = 0.f;  // Forget gate
-    Wx.at<float>(2, 0) = 0.f;  // Output gate
-    Wx.at<float>(3, 0) = 1.f;  // Update signal
-
-    cv::Mat Wh(4, 1, CV_32FC1);
-    Wh.at<float>(0, 0) = 0.f;  // Input gate
-    Wh.at<float>(1, 0) = 0.f;  // Forget gate
-    Wh.at<float>(2, 0) = 0.f;  // Output gate
-    Wh.at<float>(3, 0) = 0.f;  // Update signal
-
-    cv::Mat bias(4, 1, CV_32FC1);
-    bias.at<float>(0, 0) = 1e10f;  // Input gate - always allows input to c
-    bias.at<float>(1, 0) = 1e10f;  // Forget gate - never forget anything on c
-    bias.at<float>(2, 0) = 1e10f;  // Output gate - always output everything
-    bias.at<float>(3, 0) = 0.f;  // Update signal
-
-    LayerParams lp;
-    lp.set("reverse", true);
-    lp.set("use_timestamp_dim", true);
-    lp.blobs.clear();
-    lp.blobs.push_back(Wh);
-    lp.blobs.push_back(Wx);
-    lp.blobs.push_back(bias);
-
-    cv::Ptr<cv::dnn::LSTMLayer> layer = LSTMLayer::create(lp);
-    std::vector<cv::Mat> outputs;
-    std::vector<cv::Mat> inputs;
-    inputs.push_back(input);
-    runLayer(layer, inputs, outputs);
-
-    ASSERT_EQ(1, outputs.size());
-    cv::Mat out = outputs[0];
-    ASSERT_EQ(3, out.dims);
-    ASSERT_EQ(shape(2, 1, 1), shape(out));
-    float* data = reinterpret_cast<float*>(out.data);
-    EXPECT_NEAR(std::tanh(1e-5f) + std::tanh(2e-5f), data[0], 1e-10);
-    EXPECT_NEAR(std::tanh(2e-5f), data[1], 1e-10);
 }
 
 
@@ -794,22 +740,6 @@ TEST_P(Test_Caffe_layers, Average_pooling_kernel_area)
     net.setPreferableTarget(target);
     Mat out = net.forward();
     normAssert(out, blobFromImage(ref));
-}
-
-TEST_P(Test_Caffe_layers, PriorBox_repeated)
-{
-    Net net = readNet(_tf("prior_box.prototxt"));
-    int inp_size[] = {1, 3, 10, 10};
-    int shape_size[] = {1, 2, 3, 4};
-    Mat inp(4, inp_size, CV_32F);
-    randu(inp, -1.0f, 1.0f);
-    Mat shape(4, shape_size, CV_32F);
-    randu(shape, -1.0f, 1.0f);
-    net.setInput(inp, "data");
-    net.setInput(shape, "shape");
-    Mat out = net.forward();
-    Mat ref = blobFromNPY(_tf("priorbox_output.npy"));
-    normAssert(out, ref, "");
 }
 
 // Test PriorBoxLayer in case of no aspect ratios (just squared proposals).
@@ -1161,7 +1091,7 @@ INSTANTIATE_TEST_CASE_P(/*nothing*/, Test_DLDT_two_inputs, Combine(
 class UnsupportedLayer : public Layer
 {
 public:
-    UnsupportedLayer(const LayerParams &params) : Layer(params) {}
+    UnsupportedLayer(const LayerParams &params) {}
 
     static Ptr<Layer> create(const LayerParams& params)
     {
@@ -1487,5 +1417,94 @@ TEST(Layer_Test_Convolution, relu_fusion)
     Mat output = net.forward("testConv");
     normAssert(input, output);
 }
+
+// Check fuse convolution and relu wherein skip eltwise
+typedef testing::TestWithParam< tuple<Backend, Target> > Layers_Test_Subnet;
+TEST_P(Layers_Test_Subnet, convolutionx2_eltwise_scalex2_relu)
+{
+    Net net;
+    int id_conv[2];
+    int weightsShape[] = {1, 1, 1, 1};
+    {
+        LayerParams lp;
+        lp.set("kernel_size", 1);
+        lp.set("num_output", 1);
+        lp.set("bias_term", false);
+        lp.type = "Convolution";
+        lp.name = "testConv_1";
+
+        lp.blobs.push_back(Mat(4, &weightsShape[0], CV_32F, Scalar(-0.38)));
+        id_conv[0] = net.addLayer(lp.name, lp.type, lp);
+        net.connect(0, 0, id_conv[0], 0);
+    }
+
+    {
+        LayerParams lp;
+        lp.set("kernel_size", 1);
+        lp.set("num_output", 1);
+        lp.set("bias_term", false);
+        lp.type = "Convolution";
+        lp.name = "testConv_2";
+
+        lp.blobs.push_back(Mat(4, &weightsShape[0], CV_32F, Scalar(0.47)));
+        id_conv[1] = net.addLayer(lp.name, lp.type, lp);
+        net.connect(0, 0, id_conv[1], 0);
+    }
+
+    int eltwise_id;
+    {
+        LayerParams lp;
+        lp.type = "Eltwise";
+        lp.name = "testLayer";
+        lp.set("operation", "sum");
+
+        eltwise_id = net.addLayer(lp.name, lp.type, lp);
+        net.connect(id_conv[0], 0, eltwise_id, 0);
+        net.connect(id_conv[1], 0, eltwise_id, 1);
+    }
+
+    {
+        LayerParams lp;
+        lp.set("bias_term", false);
+        lp.type = "Scale";
+        lp.name = "testScale_1";
+        lp.blobs.push_back(Mat(Size(1, 1), CV_32F, Scalar(0.23)));
+        net.addLayerToPrev(lp.name, lp.type, lp);
+    }
+
+    {
+        LayerParams lp;
+        lp.set("bias_term", false);
+        lp.type = "Scale";
+        lp.name = "testScale_2";
+        lp.blobs.push_back(Mat(Size(1, 1), CV_32F, Scalar(0.129)));
+        net.addLayerToPrev(lp.name, lp.type, lp);
+    }
+
+    {
+        LayerParams lp;
+        lp.type = "ReLU";
+        lp.name = "testReLU";
+        net.addLayerToPrev(lp.name, lp.type, lp);
+    }
+
+    int sz[] = {1, 1, 11, 11};
+    Mat input(4, &sz[0], CV_32F);
+    randu(input, 0, 1.0);
+
+    Backend backendId = get<0>(GetParam());
+    Target  targetId  = get<1>(GetParam());
+
+    net.setInput(input);
+    net.setPreferableBackend(backendId);
+    net.setPreferableTarget(targetId);
+    Mat output = net.forward();
+
+    const double l1 = (targetId == DNN_TARGET_OPENCL_FP16 || targetId == DNN_TARGET_MYRIAD) ? 3.1e-4 : 1e-5;
+    const double lInf = (targetId == DNN_TARGET_OPENCL_FP16 || targetId == DNN_TARGET_MYRIAD) ? 9.1e-4 : 1e-4;
+    normAssert(output, input * (0.47 - 0.38) * 0.23 * 0.129, "", l1, lInf);
+}
+
+INSTANTIATE_TEST_CASE_P(/**/, Layers_Test_Subnet, dnnBackendsAndTargets());
 
 }} // namespace

@@ -78,7 +78,6 @@ class Builder:
 
     def get_cmake_cmd(self):
         cmd = ["cmake",
-               "-DENABLE_PIC=FALSE", # To workaround emscripten upstream backend issue https://github.com/emscripten-core/emscripten/issues/8761
                "-DCMAKE_BUILD_TYPE=Release",
                "-DCMAKE_TOOLCHAIN_FILE='%s'" % self.get_toolchain_file(),
                "-DCPU_BASELINE=''",
@@ -86,7 +85,6 @@ class Builder:
                "-DCV_TRACE=OFF",
                "-DBUILD_SHARED_LIBS=OFF",
                "-DWITH_1394=OFF",
-               "-DWITH_ADE=OFF",
                "-DWITH_VTK=OFF",
                "-DWITH_EIGEN=OFF",
                "-DWITH_FFMPEG=OFF",
@@ -104,6 +102,7 @@ class Builder:
                "-DWITH_OPENNI2=OFF",
                "-DWITH_PNG=OFF",
                "-DWITH_TBB=OFF",
+               "-DWITH_PTHREADS_PF=OFF",
                "-DWITH_TIFF=OFF",
                "-DWITH_V4L=OFF",
                "-DWITH_OPENCL=OFF",
@@ -119,10 +118,9 @@ class Builder:
                "-DBUILD_opencv_calib3d=ON",
                "-DBUILD_opencv_dnn=ON",
                "-DBUILD_opencv_features2d=ON",
-               "-DBUILD_opencv_flann=ON",  # No bindings provided. This module is used as a dependency for other modules.
-               "-DBUILD_opencv_gapi=OFF",
+               "-DBUILD_opencv_flann=OFF",
                "-DBUILD_opencv_ml=OFF",
-               "-DBUILD_opencv_photo=ON",
+               "-DBUILD_opencv_photo=OFF",
                "-DBUILD_opencv_imgcodecs=OFF",
                "-DBUILD_opencv_shape=OFF",
                "-DBUILD_opencv_videoio=OFF",
@@ -140,25 +138,12 @@ class Builder:
                "-DBUILD_PACKAGE=OFF",
                "-DBUILD_TESTS=OFF",
                "-DBUILD_PERF_TESTS=OFF"]
+        if self.options.cmake_option:
+            cmd += args.cmake_option
         if self.options.build_doc:
             cmd.append("-DBUILD_DOCS=ON")
         else:
             cmd.append("-DBUILD_DOCS=OFF")
-
-        if self.options.threads:
-            cmd.append("-DWITH_PTHREADS_PF=ON")
-        else:
-            cmd.append("-DWITH_PTHREADS_PF=OFF")
-
-        if self.options.simd:
-            cmd.append("-DCV_ENABLE_INTRINSICS=ON")
-        else:
-            cmd.append("-DCV_ENABLE_INTRINSICS=OFF")
-
-        if self.options.build_wasm_intrin_test:
-            cmd.append("-DBUILD_WASM_INTRIN_TESTS=ON")
-        else:
-            cmd.append("-DBUILD_WASM_INTRIN_TESTS=OFF")
 
         flags = self.get_build_flags()
         if flags:
@@ -172,14 +157,11 @@ class Builder:
             flags += "-s WASM=1 "
         elif self.options.disable_wasm:
             flags += "-s WASM=0 "
-        if self.options.threads:
-            flags += "-s USE_PTHREADS=1 -s PTHREAD_POOL_SIZE=4 "
-        else:
-            flags += "-s USE_PTHREADS=0 "
         if self.options.enable_exception:
             flags += "-s DISABLE_EXCEPTION_CATCHING=0 "
-        if self.options.simd:
-            flags += "-msimd128 "
+        if self.options.build_flags:
+            for key in args.build_flags:
+                flags += key
         return flags
 
     def config(self):
@@ -192,9 +174,6 @@ class Builder:
 
     def build_test(self):
         execute(["make", "-j", str(multiprocessing.cpu_count()), "opencv_js_test"])
-
-    def build_perf(self):
-        execute(["make", "-j", str(multiprocessing.cpu_count()), "opencv_js_perf"])
 
     def build_doc(self):
         execute(["make", "-j", str(multiprocessing.cpu_count()), "doxygen"])
@@ -214,20 +193,31 @@ if __name__ == "__main__":
     parser.add_argument('--emscripten_dir', default=emscripten_dir, help="Path to Emscripten to use for build")
     parser.add_argument('--build_wasm', action="store_true", help="Build OpenCV.js in WebAssembly format")
     parser.add_argument('--disable_wasm', action="store_true", help="Build OpenCV.js in Asm.js format")
-    parser.add_argument('--threads', action="store_true", help="Build OpenCV.js with threads optimization")
-    parser.add_argument('--simd', action="store_true", help="Build OpenCV.js with SIMD optimization")
     parser.add_argument('--build_test', action="store_true", help="Build tests")
-    parser.add_argument('--build_perf', action="store_true", help="Build performance tests")
     parser.add_argument('--build_doc', action="store_true", help="Build tutorials")
     parser.add_argument('--clean_build_dir', action="store_true", help="Clean build dir")
     parser.add_argument('--skip_config', action="store_true", help="Skip cmake config")
     parser.add_argument('--config_only', action="store_true", help="Only do cmake config")
     parser.add_argument('--enable_exception', action="store_true", help="Enable exception handling")
-    parser.add_argument('--build_wasm_intrin_test', default=False, action="store_true", help="Build WASM intrin tests")
+    parser.add_argument('--cmake_option', action='append', help="Adds the ability to modify the cmake list")
+    parser.add_argument('--build_flags',action='append',help="prepare flags for building")
+    parser.add_argument('--whitelist', help="Add an ability to connect a JSON file that include list of the OpenCV functions needed for developing a project")
+#   Example of JSON file with whitelist flag. In each section [], we describe the functions and classes of the modul
+#     [
+#       {
+#        "": ["Canny"]
+#       },
+#       {
+#        "": ["addWeighted"]
+#       }
+#     ]
+
     args = parser.parse_args()
 
     log.basicConfig(format='%(message)s', level=log.DEBUG)
     log.debug("Args: %s", args)
+    if args.whitelist:
+        os.environ["OPENCV_JS_WHITELIST"] = args.whitelist
 
     if args.emscripten_dir is None:
         log.info("Cannot get Emscripten path, please specify it either by EMSCRIPTEN environment variable or --emscripten_dir option.")
@@ -268,12 +258,6 @@ if __name__ == "__main__":
         log.info("=====")
         builder.build_test()
 
-    if args.build_perf:
-        log.info("=====")
-        log.info("===== Building OpenCV.js performance tests")
-        log.info("=====")
-        builder.build_perf()
-
     if args.build_doc:
         log.info("=====")
         log.info("===== Building OpenCV.js tutorials")
@@ -293,12 +277,6 @@ if __name__ == "__main__":
         opencvjs_test_path = os.path.join(builder.build_dir, "bin", "tests.html")
         if check_file(opencvjs_test_path):
             log.info("OpenCV.js tests location: %s", opencvjs_test_path)
-
-    if args.build_perf:
-        opencvjs_perf_path = os.path.join(builder.build_dir, "bin", "perf")
-        opencvjs_perf_base_path = os.path.join(builder.build_dir, "bin", "perf", "base.js")
-        if check_file(opencvjs_perf_base_path):
-            log.info("OpenCV.js performance tests location: %s", opencvjs_perf_path)
 
     if args.build_doc:
         opencvjs_tutorial_path = find_file("tutorial_js_root.html", os.path.join(builder.build_dir, "doc", "doxygen", "html"))

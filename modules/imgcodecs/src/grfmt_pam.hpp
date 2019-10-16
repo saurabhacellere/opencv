@@ -47,13 +47,11 @@
 //
 //M*/
 
-//Based on "imgcodecs/src/grfmt_pxm.hpp"
+//d on "imgcodecs/src/grfmt_pxm.hpp"
 //Written by Dimitrios Katsaros <patcherwork@gmail.com>
 
 #ifndef _OPENCV_PAM_HPP_
 #define _OPENCV_PAM_HPP_
-
-#ifdef HAVE_IMGCODEC_PXM
 
 #include "grfmt_base.hpp"
 #include "bitstrm.hpp"
@@ -61,19 +59,19 @@
 namespace cv
 {
 
-class PAMDecoder CV_FINAL : public BaseImageDecoder
+class PAMDecoder : public ImageDecoder::Impl
 {
 public:
 
     PAMDecoder();
-    virtual ~PAMDecoder() CV_OVERRIDE;
+    virtual ~PAMDecoder();
 
-    bool  readData( Mat& img ) CV_OVERRIDE;
-    bool  readHeader() CV_OVERRIDE;
+    bool  readData( Mat& img );
+    bool  readHeader();
 
-    size_t signatureLength() const CV_OVERRIDE;
-    bool checkSignature( const String& signature ) const CV_OVERRIDE;
-    ImageDecoder newDecoder() const CV_OVERRIDE;
+    size_t signatureLength() const;
+    bool checkSignature( const String& signature ) const;
+    Ptr<ImageDecoder::Impl> newDecoder() const;
 
 protected:
 
@@ -84,20 +82,18 @@ protected:
 };
 
 
-class PAMEncoder CV_FINAL : public BaseImageEncoder
+class PAMEncoder : public ImageEncoder::Impl
 {
 public:
     PAMEncoder();
-    virtual ~PAMEncoder() CV_OVERRIDE;
+    virtual ~PAMEncoder();
 
-    bool  isFormatSupported( int depth ) const CV_OVERRIDE;
-    bool  write( const Mat& img, const std::vector<int>& params ) CV_OVERRIDE;
+    bool  isFormatSupported( int depth ) const;
+    bool  write( const Mat& img, InputArray params );
 
-    ImageEncoder newEncoder() const CV_OVERRIDE;
+    Ptr<ImageEncoder::Impl> newEncoder() const;
 };
 
 }
-
-#endif
 
 #endif /* _OPENCV_PAM_HPP_ */

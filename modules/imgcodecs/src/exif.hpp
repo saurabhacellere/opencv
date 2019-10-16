@@ -48,6 +48,7 @@
 #include <map>
 #include <utility>
 #include <algorithm>
+#include <stdint.h>
 #include <string>
 #include <vector>
 #include <iostream>
@@ -131,24 +132,6 @@ struct ExifEntry_t
 };
 
 /**
- * @brief Picture orientation which may be taken from EXIF
- *      Orientation usually matters when the picture is taken by
- *      smartphone or other camera with orientation sensor support
- *      Corresponds to EXIF 2.3 Specification
- */
-enum ImageOrientation
-{
-    IMAGE_ORIENTATION_TL = 1, ///< Horizontal (normal)
-    IMAGE_ORIENTATION_TR = 2, ///< Mirrored horizontal
-    IMAGE_ORIENTATION_BR = 3, ///< Rotate 180
-    IMAGE_ORIENTATION_BL = 4, ///< Mirrored vertical
-    IMAGE_ORIENTATION_LT = 5, ///< Mirrored horizontal & rotate 270 CW
-    IMAGE_ORIENTATION_RT = 6, ///< Rotate 90 CW
-    IMAGE_ORIENTATION_RB = 7, ///< Mirrored horizontal & rotate 90 CW
-    IMAGE_ORIENTATION_LB = 8  ///< Rotate 270 CW
-};
-
-/**
  * @brief Reading exif information from Jpeg file
  *
  * Usage example for getting the orientation of the image:
@@ -199,7 +182,7 @@ private:
     bool checkTagMark() const;
 
     size_t getFieldSize ();
-    size_t getNumDirEntry( const size_t offsetNumDir ) const;
+    size_t getNumDirEntry() const;
     uint32_t getStartOffset() const;
     uint16_t getExifTag( const size_t offset ) const;
     uint16_t getU16( const size_t offset ) const;
@@ -224,6 +207,9 @@ private:
 
 private:
     static const uint16_t tagMarkRequired = 0x2A;
+
+    //offset to the _number-of-directory-entry_ field
+    static const size_t offsetNumDir = 8;
 
     //max size of data in tag.
     //'DDDDDDDD' contains the value of that Tag. If its size is over 4bytes,

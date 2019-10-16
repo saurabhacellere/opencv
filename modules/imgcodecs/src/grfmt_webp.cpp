@@ -54,21 +54,16 @@
 
 #include "opencv2/imgproc.hpp"
 
-#include <opencv2/core/utils/configuration.private.hpp>
+const size_t WEBP_HEADER_SIZE = 32;
 
 namespace cv
 {
 
-// 64Mb limit to avoid memory DDOS
-static size_t param_maxFileSize = utils::getConfigurationParameterSizeT("OPENCV_IMGCODECS_WEBP_MAX_FILE_SIZE", 64*1024*1024);
-
-static const size_t WEBP_HEADER_SIZE = 32;
-
 WebPDecoder::WebPDecoder()
 {
     m_buf_supported = true;
+    m_description = "WEBP";
     channels = 0;
-    fs_size = 0;
 }
 
 WebPDecoder::~WebPDecoder() {}
@@ -95,36 +90,55 @@ bool WebPDecoder::checkSignature(const String & signature) const
     return ret;
 }
 
-ImageDecoder WebPDecoder::newDecoder() const
+Ptr<ImageDecoder::Impl> WebPDecoder::newDecoder() const
 {
     return makePtr<WebPDecoder>();
 }
 
 bool WebPDecoder::readHeader()
 {
-    uint8_t header[WEBP_HEADER_SIZE] = { 0 };
     if (m_buf.empty())
     {
-        fs.open(m_filename.c_str(), std::ios::binary);
-        fs.seekg(0, std::ios::end);
-        fs_size = safeCastToSizeT(fs.tellg(), "File is too large");
-        fs.seekg(0, std::ios::beg);
-        CV_Assert(fs && "File stream error");
-        CV_CheckGE(fs_size, WEBP_HEADER_SIZE, "File is too small");
-        CV_CheckLE(fs_size, param_maxFileSize, "File is too large. Increase OPENCV_IMGCODECS_WEBP_MAX_FILE_SIZE parameter if you want to process large files");
+        FILE * wfile = NULL;
 
-        fs.read((char*)header, sizeof(header));
-        CV_Assert(fs && "Can't read WEBP_HEADER_SIZE bytes");
+        wfile = fopen(m_filename.c_str(), "rb");
+
+        if(wfile == NULL)
+        {
+            return false;
+        }
+
+        fseek(wfile, 0, SEEK_END);
+        long int wfile_size = ftell(wfile);
+        fseek(wfile, 0, SEEK_SET);
+
+        if(wfile_size > static_cast<long int>(INT_MAX))
+        {
+            fclose(wfile);
+            return false;
+        }
+
+        data.create(1, (int)wfile_size, CV_8U);
+
+        size_t data_size = fread(data.ptr(), 1, wfile_size, wfile);
+
+        if(wfile)
+        {
+            fclose(wfile);
+        }
+
+        if(static_cast<long int>(data_size) != wfile_size)
+        {
+            return false;
+        }
     }
     else
     {
-        CV_CheckGE(m_buf.total(), WEBP_HEADER_SIZE, "Buffer is too small");
-        memcpy(header, m_buf.ptr(), sizeof(header));
         data = m_buf;
     }
 
     WebPBitstreamFeatures features;
-    if (VP8_STATUS_OK == WebPGetFeatures(header, sizeof(header), &features))
+    if(VP8_STATUS_OK == WebPGetFeatures(data.ptr(), WEBP_HEADER_SIZE, &features))
     {
         m_width  = features.width;
         m_height = features.height;
@@ -148,75 +162,41 @@ bool WebPDecoder::readHeader()
 
 bool WebPDecoder::readData(Mat &img)
 {
-    CV_CheckGE(m_width, 0, ""); CV_CheckGE(m_height, 0, "");
-
-    CV_CheckEQ(img.cols, m_width, "");
-    CV_CheckEQ(img.rows, m_height, "");
-
-    if (m_buf.empty())
+    if( m_width > 0 && m_height > 0 )
     {
-        fs.seekg(0, std::ios::beg); CV_Assert(fs && "File stream error");
-        data.create(1, validateToInt(fs_size), CV_8UC1);
-        fs.read((char*)data.ptr(), fs_size);
-        CV_Assert(fs && "Can't read file data");
-        fs.close();
-    }
-    CV_Assert(data.type() == CV_8UC1); CV_Assert(data.rows == 1);
+        bool convert_grayscale = (img.type() == CV_8UC1); // IMREAD_GRAYSCALE requested
 
-    {
-        Mat read_img;
-        CV_CheckType(img.type(), img.type() == CV_8UC1 || img.type() == CV_8UC3 || img.type() == CV_8UC4, "");
-        if (img.type() != m_type)
+        if (img.cols != m_width || img.rows != m_height || img.type() != m_type)
         {
-            read_img.create(m_height, m_width, m_type);
-        }
-        else
-        {
-            read_img = img;  // copy header
+            img.create(m_height, m_width, m_type);
         }
 
-        uchar* out_data = read_img.ptr();
-        size_t out_data_size = read_img.dataend - out_data;
+        uchar* out_data = img.ptr();
+        size_t out_data_size = img.cols * img.rows * img.elemSize();
 
-        uchar *res_ptr = NULL;
+        uchar *res_ptr = 0;
         if (channels == 3)
         {
-            CV_CheckTypeEQ(read_img.type(), CV_8UC3, "");
             res_ptr = WebPDecodeBGRInto(data.ptr(), data.total(), out_data,
-                                        (int)out_data_size, (int)read_img.step);
+                                        (int)out_data_size, (int)img.step);
         }
         else if (channels == 4)
         {
-            CV_CheckTypeEQ(read_img.type(), CV_8UC4, "");
             res_ptr = WebPDecodeBGRAInto(data.ptr(), data.total(), out_data,
-                                         (int)out_data_size, (int)read_img.step);
+                                         (int)out_data_size, (int)img.step);
         }
 
-        if (res_ptr != out_data)
-            return false;
-
-        if (read_img.data == img.data && img.type() == m_type)
+        if(res_ptr == out_data)
         {
-            // nothing
-        }
-        else if (img.type() == CV_8UC1)
-        {
-            cvtColor(read_img, img, COLOR_BGR2GRAY);
-        }
-        else if (img.type() == CV_8UC3 && m_type == CV_8UC4)
-        {
-            cvtColor(read_img, img, COLOR_BGRA2BGR);
-        }
-        else if (img.type() == CV_8UC4 && m_type == CV_8UC3)
-        {
-            cvtColor(read_img, img, COLOR_BGR2BGRA);
-        }
-        else
-        {
-            CV_Error(Error::StsInternal, "");
+            if (convert_grayscale)
+            {
+                cvtColor(img, img, COLOR_BGR2GRAY);
+            }
+            return true;
         }
     }
-    return true;
+
+    return false;
 }
 
 WebPEncoder::WebPEncoder()
@@ -227,26 +207,32 @@ WebPEncoder::WebPEncoder()
 
 WebPEncoder::~WebPEncoder() { }
 
-ImageEncoder WebPEncoder::newEncoder() const
+Ptr<ImageEncoder::Impl> WebPEncoder::newEncoder() const
 {
     return makePtr<WebPEncoder>();
 }
 
-bool WebPEncoder::write(const Mat& img, const std::vector<int>& params)
+bool WebPEncoder::write(const Mat& img, InputArray _params)
 {
-    CV_CheckDepthEQ(img.depth(), CV_8U, "WebP codec supports 8U images only");
+    Mat_<int> params(_params.getMat());
+    int channels = img.channels(), depth = img.depth();
+    int width = img.cols, height = img.rows;
 
-    const int width = img.cols, height = img.rows;
+    const Mat *image = &img;
+    Mat temp;
+    size_t size = 0;
 
     bool comp_lossless = true;
     float quality = 100.0f;
 
-    if (params.size() > 1)
+
+    if (std::distance(params.begin(), params.end()) > 1)
     {
-        if (params[0] == CV_IMWRITE_WEBP_QUALITY)
+        MatIterator_<int> it = params.begin();
+        if (*it == CV_IMWRITE_WEBP_QUALITY)
         {
             comp_lossless = false;
-            quality = static_cast<float>(params[1]);
+            quality = static_cast<float>(*(++it));
             if (quality < 1.0f)
             {
                 quality = 1.0f;
@@ -258,64 +244,69 @@ bool WebPEncoder::write(const Mat& img, const std::vector<int>& params)
         }
     }
 
-    int channels = img.channels();
-    CV_Check(channels, channels == 1 || channels == 3 || channels == 4, "");
+    uint8_t *out = NULL;
 
-    const Mat *image = &img;
-    Mat temp;
-
-    if (channels == 1)
+    if(depth != CV_8U)
     {
-        cvtColor(*image, temp, COLOR_GRAY2BGR);
+        return false;
+    }
+
+    if(channels == 1)
+    {
+        cvtColor(*image, temp, CV_GRAY2BGR);
         image = &temp;
         channels = 3;
     }
+    else if (channels == 2)
+    {
+        return false;
+    }
 
-    uint8_t *out = NULL;
-    size_t size = 0;
     if (comp_lossless)
     {
-        if (channels == 3)
+        if(channels == 3)
         {
             size = WebPEncodeLosslessBGR(image->ptr(), width, height, (int)image->step, &out);
         }
-        else if (channels == 4)
+        else if(channels == 4)
         {
             size = WebPEncodeLosslessBGRA(image->ptr(), width, height, (int)image->step, &out);
         }
     }
     else
     {
-        if (channels == 3)
+        if(channels == 3)
         {
             size = WebPEncodeBGR(image->ptr(), width, height, (int)image->step, quality, &out);
         }
-        else if (channels == 4)
+        else if(channels == 4)
         {
             size = WebPEncodeBGRA(image->ptr(), width, height, (int)image->step, quality, &out);
         }
     }
-#if WEBP_DECODER_ABI_VERSION >= 0x0206
-    Ptr<uint8_t> out_cleaner(out, WebPFree);
-#else
-    Ptr<uint8_t> out_cleaner(out, free);
-#endif
 
-    CV_Assert(size > 0);
-
-    if (m_buf)
+    if(size > 0)
     {
-        m_buf->resize(size);
-        memcpy(&(*m_buf)[0], out, size);
-    }
-    else
-    {
-        FILE *fd = fopen(m_filename.c_str(), "wb");
-        if (fd != NULL)
+        if(m_buf)
         {
-            fwrite(out, size, sizeof(uint8_t), fd);
-            fclose(fd); fd = NULL;
+            m_buf->resize(size);
+            memcpy(&m_buf->data[0], out, size);
         }
+        else
+        {
+            FILE *fd = fopen(m_filename.c_str(), "wb");
+            if(fd != NULL)
+            {
+                fwrite(out, size, sizeof(uint8_t), fd);
+                fclose(fd); fd = NULL;
+            }
+        }
+    }
+
+    if (out != NULL)
+    {
+        free(out);
+        out = NULL;
     }
 
     return size > 0;

@@ -56,3 +56,51 @@ Deep Neural Networks (dnn module) {#tutorial_table_of_content_dnn}
     *Author:* Dmitry Kurtaev
 
     How to define custom layers to import networks.
+
+-   @subpage tutorial_dnn_classification_module
+
+    *Compatibility:* \> OpenCV 4.1.1
+
+    *Author:* Diego Velazquez
+
+    In this tutorial we will go through how you can use the Classification Module from the new Dnn API
+
+-   @subpage tutorial_dnn_detection_module
+
+    *Compatibility:* \> OpenCV 4.1.1
+
+    *Author:* Diego Velazquez
+
+    In this tutorial we will go through how you can use the Detection Module from the new Dnn API
+
+-   @subpage tutorial_dnn_generation_module
+
+    *Compatibility:* \> OpenCV 4.1.1
+
+    *Author:* Diego Velazquez
+
+    In this tutorial we will go through how you can use the Generation Module from the new Dnn API
+
+-   @subpage tutorial_dnn_segmentation_module
+
+    *Compatibility:* \> OpenCV 4.1.1
+
+    *Author:* Diego Velazquez
+
+    In this tutorial we will go through how you can use the Segmentation Module from the new Dnn API
+
+-   @subpage tutorial_dnn_keypoints_module
+
+    *Compatibility:* \> OpenCV 4.1.1
+
+    *Author:* Diego Velazquez
+
+    In this tutorial we will go through how you can use the Keypoints Module from the new Dnn API
+
+-   @subpage tutorial_dnn_high_level_api
+
+    *Compatibility:* \> OpenCV 4.1.1
+
+    *Author:* Diego Velazquez
+
+    How you can use the new High Level API for the DNN module, plus some general advice.

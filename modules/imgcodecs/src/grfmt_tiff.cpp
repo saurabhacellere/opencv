@@ -155,112 +155,256 @@ ImageDecoder TiffDecoder::newDecoder() const
     return makePtr<TiffDecoder>();
 }
 
-class TiffDecoderBufHelper
+namespace
 {
-    Mat& m_buf;
-    size_t& m_buf_pos;
-public:
-    TiffDecoderBufHelper(Mat& buf, size_t& buf_pos) :
-        m_buf(buf), m_buf_pos(buf_pos)
-    {}
-    static tmsize_t read( thandle_t handle, void* buffer, tmsize_t n )
+    class TiffDecoderBufHelper
     {
-        TiffDecoderBufHelper *helper = reinterpret_cast<TiffDecoderBufHelper*>(handle);
-        const Mat& buf = helper->m_buf;
-        const tmsize_t size = buf.cols*buf.rows*buf.elemSize();
-        tmsize_t pos = helper->m_buf_pos;
-        if ( n > (size - pos) )
+        Mat &m_buf;
+        size_t &m_buf_pos;
+    public:
+        TiffDecoderBufHelper(Mat &buf, size_t &buf_pos) :
+                m_buf(buf), m_buf_pos(buf_pos) {}
+
+        static tmsize_t read(thandle_t handle, void *buffer, tmsize_t n)
         {
-            n = size - pos;
+            TiffDecoderBufHelper *helper = reinterpret_cast<TiffDecoderBufHelper *>(handle);
+            const Mat &buf = helper->m_buf;
+            const tmsize_t size = buf.cols * buf.rows * buf.elemSize();
+            tmsize_t pos = helper->m_buf_pos;
+            if (n > (size - pos)) {
+                n = size - pos;
+            }
+            memcpy(buffer, buf.ptr() + pos, n);
+            helper->m_buf_pos += n;
+            return n;
         }
-        memcpy(buffer, buf.ptr() + pos, n);
-        helper->m_buf_pos += n;
-        return n;
-    }
 
-    static tmsize_t write( thandle_t /*handle*/, void* /*buffer*/, tmsize_t /*n*/ )
-    {
-        // Not used for decoding.
-        return 0;
-    }
-
-    static toff_t seek( thandle_t handle, toff_t offset, int whence )
-    {
-        TiffDecoderBufHelper *helper = reinterpret_cast<TiffDecoderBufHelper*>(handle);
-        const Mat& buf = helper->m_buf;
-        const toff_t size = buf.cols*buf.rows*buf.elemSize();
-        toff_t new_pos = helper->m_buf_pos;
-        switch (whence)
+        static tmsize_t write(thandle_t /*handle*/, void * /*buffer*/, tmsize_t /*n*/)
         {
-            case SEEK_SET:
-                new_pos = offset;
-                break;
-            case SEEK_CUR:
-                new_pos += offset;
-                break;
-            case SEEK_END:
-                new_pos = size + offset;
-                break;
+            // Not used for decoding.
+            return 0;
         }
-        new_pos = std::min(new_pos, size);
-        helper->m_buf_pos = (size_t)new_pos;
-        return new_pos;
+
+        static toff_t seek(thandle_t handle, toff_t offset, int whence)
+        {
+            TiffDecoderBufHelper *helper = reinterpret_cast<TiffDecoderBufHelper *>(handle);
+            const Mat &buf = helper->m_buf;
+            const toff_t size = buf.cols * buf.rows * buf.elemSize();
+            toff_t new_pos = helper->m_buf_pos;
+            switch (whence) {
+                case SEEK_SET:
+                    new_pos = offset;
+                    break;
+                case SEEK_CUR:
+                    new_pos += offset;
+                    break;
+                case SEEK_END:
+                    new_pos = size + offset;
+                    break;
+            }
+            new_pos = std::min(new_pos, size);
+            helper->m_buf_pos = (size_t) new_pos;
+            return new_pos;
+        }
+
+        static int map(thandle_t handle, void **base, toff_t *size)
+        {
+            TiffDecoderBufHelper *helper = reinterpret_cast<TiffDecoderBufHelper *>(handle);
+            Mat &buf = helper->m_buf;
+            *base = buf.ptr();
+            *size = buf.cols * buf.rows * buf.elemSize();
+            return 0;
+        }
+
+        static toff_t size(thandle_t handle)
+        {
+            TiffDecoderBufHelper *helper = reinterpret_cast<TiffDecoderBufHelper *>(handle);
+            const Mat &buf = helper->m_buf;
+            return buf.cols * buf.rows * buf.elemSize();
+        }
+
+        static int close(thandle_t handle)
+        {
+            TiffDecoderBufHelper *helper = reinterpret_cast<TiffDecoderBufHelper *>(handle);
+            delete helper;
+            return 0;
+        }
+    };
+}
+
+bool TiffDecoder::setSource( const String& filename ) {
+   return open(BaseImageDecoder::setSource(filename));
+}
+
+bool TiffDecoder::setSource( const Mat& buf ) {
+    return open(BaseImageDecoder::setSource(buf));
+}
+
+bool TiffDecoder::open(bool source_set) {
+    close();
+    if (!source_set) return false;
+
+    // TIFFOpen() mode flags are different to fopen().  A 'b' in mode "rb" has no effect when reading.
+    // http://www.remotesensing.org/libtiff/man/TIFFOpen.3tiff.html
+    TIFF *tif;
+    if (!m_buf.empty()) {
+        m_buf_pos = 0;
+        TiffDecoderBufHelper *buf_helper = new TiffDecoderBufHelper(this->m_buf, this->m_buf_pos);
+        tif = TIFFClientOpen("", "r", reinterpret_cast<thandle_t>(buf_helper), &TiffDecoderBufHelper::read,
+                             &TiffDecoderBufHelper::write, &TiffDecoderBufHelper::seek,
+                             &TiffDecoderBufHelper::close, &TiffDecoderBufHelper::size,
+                             &TiffDecoderBufHelper::map, /*unmap=*/0);
+        if (!tif) delete buf_helper;
+    } else {
+        tif = TIFFOpen(m_filename.c_str(), "r");
     }
 
-    static int map( thandle_t handle, void** base, toff_t* size )
+    if (tif) {
+        m_tif.reset(tif, cv_tiffCloseHandle);
+    } else {
+        m_tif.release();
+    }
+
+    return !m_tif.empty();
+}
+
+namespace {
+    template<class T>
+    static void
+    getField(TIFF *tif, int tag, const String &tag_str, const String &name, int num, std::map<String, String> &p)
     {
-        TiffDecoderBufHelper *helper = reinterpret_cast<TiffDecoderBufHelper*>(handle);
-        Mat& buf = helper->m_buf;
-        *base = buf.ptr();
-        *size = buf.cols*buf.rows*buf.elemSize();
-        return 0;
+        T buf1;
+        T buf2;
+        if (TIFFGetField(tif, tag, &buf1, &buf2)) {
+            switch (num) {
+                case 1:
+                    p[tag_str] = p[name] = BaseImageDecoder::toString(buf1);
+                    break;
+
+                case 2:
+                    p[tag_str] = p[name] = BaseImageDecoder::toString(buf1) + "-" + BaseImageDecoder::toString(buf2);
+                    break;
+
+                default:
+                    CV_Error(Error::StsBadArg, "bad number of fields");
+                    break;
+            }
+        }
     }
 
-    static toff_t size( thandle_t handle )
+    struct TiffTagTrait
     {
-        TiffDecoderBufHelper *helper = reinterpret_cast<TiffDecoderBufHelper*>(handle);
-        const Mat& buf = helper->m_buf;
-        return buf.cols*buf.rows*buf.elemSize();
-    }
+        int m_tag;
+        String m_tag_str;
+        String m_name;
+        int m_num;
 
-    static int close( thandle_t handle )
-    {
-        TiffDecoderBufHelper *helper = reinterpret_cast<TiffDecoderBufHelper*>(handle);
-        delete helper;
-        return 0;
-    }
-};
+        void
+        (*m_get)(TIFF *tif, int tag, const String &tag_str, const String &name, int num, std::map<String, String> &p);
 
-bool TiffDecoder::readHeader()
+        TiffTagTrait(int tag, const String &name, int num,
+                     void (*getter)(TIFF *tif, int tag, const String &tag_str, const String &name, int num,
+                                    std::map<String, String> &p))
+                : m_tag(tag), m_tag_str(BaseImageDecoder::toString(m_tag)), m_name(name), m_num(num), m_get(getter)
+        {
+            CV_Assert(num >= 1 && num <= 2);
+        }
+
+        void get(TIFF *tif, std::map<String, String> &p) const
+        {
+            m_get(tif, m_tag, m_tag_str, m_name, m_num, p);
+        }
+    };
+}
+
+static const std::vector<TiffTagTrait>& getTTT()
 {
+    static std::vector<TiffTagTrait> tag_traits;
+#define  TTT(tag, num, type) tag_traits.push_back(TiffTagTrait(TIFFTAG_##tag, #tag, num, &getField<type>))
+    TTT(XPOSITION, 1, float);
+    TTT(YPOSITION, 1, float);
+    TTT(XRESOLUTION, 1, float);
+    TTT(YRESOLUTION, 1, float);
+    TTT(RESOLUTIONUNIT, 1, uint16);
+    TTT(ORIENTATION, 1, uint16);
+    TTT(PAGENUMBER, 2, uint16);
+    TTT(ARTIST, 1, char*);
+    TTT(COPYRIGHT, 1, char*);
+    TTT(DATETIME, 1, char*);
+    TTT(DOCUMENTNAME, 1, char*);
+    TTT(IMAGEDESCRIPTION, 1, char*);
+    TTT(INKNAMES, 1, char*);
+    TTT(MAKE, 1, char*);
+    TTT(MODEL, 1, char*);
+    TTT(PAGENAME, 1, char*);
+    TTT(SOFTWARE, 1, char*);
+    TTT(TARGETPRINTER, 1, char*);
+#undef TTT
+    return tag_traits;
+}
+
+template<class K, class V> bool contains(const std::map<K, V> &m, const K &k) {
+    return m.find(k) != m.end();
+}
+
+static void setRes(const String &name, const String &res, const String &unit, std::map<String, String> &p){
+    if(contains(p, res) && contains(p, unit)) {
+        const String &r_str = p[res];
+        const String &u_str = p[unit];
+        double r = BaseImageDecoder::fromString<double>(r_str);
+        int u = BaseImageDecoder::fromString<int>(u_str);
+        switch(u) {
+            case RESUNIT_NONE:
+                p[name] = BaseImageDecoder::toString(-r);
+                break;
+
+            case RESUNIT_INCH:
+                p[name] = BaseImageDecoder::toString(r);
+                break;
+
+            case RESUNIT_CENTIMETER:
+                p[name] = BaseImageDecoder::toString(r * 2.54);
+                break;
+        }
+    }
+}
+
+static void setRes(const String &name, int tag, std::map<String, String> &p){
+    setRes(name, BaseImageDecoder::toString(tag), BaseImageDecoder::toString(TIFFTAG_RESOLUTIONUNIT), p);
+}
+
+static void setIf(const String &name, const String &tag, std::map<String, String> &p){
+    if(contains(p, tag)) {
+        p[name] = p[tag];
+    }
+}
+
+static void setIf(const String &name, int tag, std::map<String, String> &p){
+    setIf(name, BaseImageDecoder::toString(tag), p);
+}
+
+static void readTiffTags(TIFF *tif, std::map<String, String> *properties) {
+    if (!tif || !properties) return;
+
+    std::map<String, String> &p = *properties;
+    static const std::vector<TiffTagTrait> &ttt = getTTT();
+    for(std::vector<TiffTagTrait>::const_iterator it = ttt.begin(); it != ttt.end(); ++it) {
+        it->get(tif, p);
+    }
+
+    setRes(BaseImageDecoder::dpi_x, TIFFTAG_XRESOLUTION, p);
+    setRes(BaseImageDecoder::dpi_y, TIFFTAG_YRESOLUTION, p);
+    setIf(BaseImageDecoder::document_name, TIFFTAG_DOCUMENTNAME, p);
+    setIf(BaseImageDecoder::page_name, TIFFTAG_PAGENAME, p);
+    setIf(BaseImageDecoder::page_number, TIFFTAG_PAGENUMBER, p);
+}
+
+bool TiffDecoder::readHeader(std::map<String, String> *properties)
+{
+    if(properties) properties->clear();
     bool result = false;
 
     TIFF* tif = static_cast<TIFF*>(m_tif.get());
-    if (!tif)
-    {
-        // TIFFOpen() mode flags are different to fopen().  A 'b' in mode "rb" has no effect when reading.
-        // http://www.remotesensing.org/libtiff/man/TIFFOpen.3tiff.html
-        if ( !m_buf.empty() )
-        {
-            m_buf_pos = 0;
-            TiffDecoderBufHelper* buf_helper = new TiffDecoderBufHelper(this->m_buf, this->m_buf_pos);
-            tif = TIFFClientOpen( "", "r", reinterpret_cast<thandle_t>(buf_helper), &TiffDecoderBufHelper::read,
-                                  &TiffDecoderBufHelper::write, &TiffDecoderBufHelper::seek,
-                                  &TiffDecoderBufHelper::close, &TiffDecoderBufHelper::size,
-                                  &TiffDecoderBufHelper::map, /*unmap=*/0 );
-            if (!tif)
-                delete buf_helper;
-        }
-        else
-        {
-            tif = TIFFOpen(m_filename.c_str(), "r");
-        }
-        if (tif)
-            m_tif.reset(tif, cv_tiffCloseHandle);
-        else
-            m_tif.release();
-    }
-
     if (tif)
     {
         uint32 wdth = 0, hght = 0;
@@ -272,9 +416,10 @@ bool TiffDecoder::readHeader()
 
         {
             bool isGrayScale = photometric == PHOTOMETRIC_MINISWHITE || photometric == PHOTOMETRIC_MINISBLACK;
-            uint16 bpp = 8, ncn = isGrayScale ? 1 : 3;
+            uint16 bpp = 8, ncn = isGrayScale ? 1 : 3, sf = SAMPLEFORMAT_UINT;
             CV_TIFF_CHECK_CALL(TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bpp));
             CV_TIFF_CHECK_CALL_DEBUG(TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &ncn));
+            CV_TIFF_CHECK_CALL_DEBUG(TIFFGetField(tif, TIFFTAG_SAMPLEFORMAT, &sf));
 
             m_width = wdth;
             m_height = hght;
@@ -295,27 +440,47 @@ bool TiffDecoder::readHeader()
             switch(bpp)
             {
                 case 1:
-                    m_type = CV_MAKETYPE(CV_8U, !isGrayScale ? wanted_channels : 1);
-                    result = true;
+                    if(sf == SAMPLEFORMAT_UINT) {
+                        m_type = CV_MAKETYPE(CV_8U, !isGrayScale ? wanted_channels : 1);
+                        result = true;
+                    } else {
+                        CV_Error(cv::Error::StsError, "Invalid format value read from TIFF header for 1 bit! Must be UINT.");
+                    }
                     break;
                 case 8:
-                    m_type = CV_MAKETYPE(CV_8U, !isGrayScale ? wanted_channels : 1);
-                    result = true;
+                    if(sf == SAMPLEFORMAT_UINT) {
+                        m_type = CV_MAKETYPE(CV_8U, !isGrayScale ? wanted_channels : 1);
+                        result = true;
+                    } else {
+                        CV_Error(cv::Error::StsError, "Invalid format value read from TIFF header for 8 bit! Must be UINT.");
+                    }
                     break;
                 case 16:
-                    m_type = CV_MAKETYPE(CV_16U, !isGrayScale ? wanted_channels : 1);
-                    result = true;
+                    if(sf == SAMPLEFORMAT_UINT) {
+                        m_type = CV_MAKETYPE(CV_16U, !isGrayScale ? wanted_channels : 1);
+                        result = true;
+                    } else {
+                        CV_Error(cv::Error::StsError, "Invalid format value read from TIFF header for 16 bit! Must be UINT.");
+                    }
                     break;
                 case 32:
-                    m_type = CV_MAKETYPE(CV_32F, wanted_channels);
-                    result = true;
+                    if(sf == SAMPLEFORMAT_IEEEFP) {
+                        m_type = CV_MAKETYPE(CV_32F, wanted_channels);
+                        result = true;
+                    } else {
+                        CV_Error(cv::Error::StsError, "Invalid format value read from TIFF header for 32 bit! Must be IEEEFP.");
+                    }
                     break;
                 case 64:
-                    m_type = CV_MAKETYPE(CV_64F, wanted_channels);
-                    result = true;
+                    if(sf == SAMPLEFORMAT_IEEEFP) {
+                        m_type = CV_MAKETYPE(CV_64F, wanted_channels);
+                        result = true;
+                    } else {
+                        CV_Error(cv::Error::StsError, "Invalid format value read from TIFF header for 64 bit! Must be IEEEFP.");
+                    }
                     break;
-            default:
-                CV_Error(cv::Error::StsError, "Invalid bitsperpixel value read from TIFF header! Must be 1, 8, 16, 32 or 64.");
+                default:
+                    CV_Error(cv::Error::StsError, "Invalid bitsperpixel value read from TIFF header! Must be 1, 8, 16, 32 or 64.");
             }
         }
     }
@@ -326,12 +491,23 @@ bool TiffDecoder::readHeader()
     return result;
 }
 
+int TiffDecoder::pageNum() const
+{
+    return !m_tif.empty() ? TIFFNumberOfDirectories(static_cast<TIFF*>(m_tif.get())) : 0;
+}
+
 bool TiffDecoder::nextPage()
 {
     // Prepare the next page, if any.
     return !m_tif.empty() &&
-           TIFFReadDirectory(static_cast<TIFF*>(m_tif.get())) &&
-           readHeader();
+           TIFFReadDirectory(static_cast<TIFF*>(m_tif.get()));
+}
+
+bool TiffDecoder::gotoPage(int page)
+{
+    // Prepare the page, if possible.
+    return !m_tif.empty() &&
+           TIFFSetDirectory(static_cast<TIFF*>(m_tif.get()), (uint16)page);
 }
 
 static void fixOrientationPartial(Mat &img, uint16 orientation)
@@ -405,13 +581,15 @@ static void fixOrientation(Mat &img, uint16 orientation, int dst_bpp)
     }
 }
 
-bool  TiffDecoder::readData( Mat& img )
+bool  TiffDecoder::readData( Mat& img, std::map<String, String> *properties )
 {
     int type = img.type();
     int depth = CV_MAT_DEPTH(type);
 
     CV_Assert(!m_tif.empty());
     TIFF* tif = (TIFF*)m_tif.get();
+
+    readTiffTags(tif, properties);
 
     uint16 photometric = (uint16)-1;
     CV_TIFF_CHECK_CALL(TIFFGetField(tif, TIFFTAG_PHOTOMETRIC, &photometric));
@@ -491,7 +669,6 @@ bool  TiffDecoder::readData( Mat& img )
             else if (dst_bpp == 32 || dst_bpp == 64)
             {
                 CV_Assert(ncn == img.channels());
-                CV_TIFF_CHECK_CALL(TIFFSetField(tif, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_IEEEFP));
             }
             const size_t buffer_size = (bpp / bitsPerByte) * ncn * tile_height0 * tile_width0;
             AutoBuffer<uchar> _buffer(buffer_size);
@@ -688,6 +865,12 @@ bool TiffEncoder::isFormatSupported( int depth ) const
     return depth == CV_8U || depth == CV_16U || depth == CV_32F || depth == CV_64F;
 }
 
+bool TiffEncoder::setDestination( std::vector<uchar>& buf ) {
+    m_buf = &buf;
+    m_filename = String();
+    return true;
+}
+
 void  TiffEncoder::writeTag( WLByteStream& strm, TiffTag tag,
                              TiffFieldType fieldType,
                              int count, int value )
@@ -706,20 +889,33 @@ public:
             : m_buf(buf), m_buf_pos(0)
     {}
 
-    TIFF* open ()
+    TIFF* open (int append)
     {
+        if(!append) m_buf->clear();
         // do NOT put "wb" as the mode, because the b means "big endian" mode, not "binary" mode.
         // http://www.remotesensing.org/libtiff/man/TIFFOpen.3tiff.html
-        return TIFFClientOpen( "", "w", reinterpret_cast<thandle_t>(this), &TiffEncoderBufHelper::read,
+        return TIFFClientOpen( "", append ? "am" : "wm", reinterpret_cast<thandle_t>(this), &TiffEncoderBufHelper::read,
                                &TiffEncoderBufHelper::write, &TiffEncoderBufHelper::seek,
                                &TiffEncoderBufHelper::close, &TiffEncoderBufHelper::size,
                                /*map=*/0, /*unmap=*/0 );
     }
 
-    static tmsize_t read( thandle_t /*handle*/, void* /*buffer*/, tmsize_t /*n*/ )
+    /// used for appending
+    static tmsize_t read( thandle_t handle, void* buffer, tmsize_t n )
     {
-        // Not used for encoding.
-        return 0;
+        TiffEncoderBufHelper *helper = reinterpret_cast<TiffEncoderBufHelper *>(handle);
+        size_t begin = (size_t) helper->m_buf_pos;
+        if (helper->m_buf->size() < begin) return 0;
+
+        size_t end = begin + n;
+        if (helper->m_buf->size() < end)
+        {
+            n = helper->m_buf->size() - begin;
+            end = begin + n;
+        }
+        memcpy(buffer, &(*helper->m_buf)[begin], n);
+        helper->m_buf_pos = end;
+        return n;
     }
 
     static tmsize_t write( thandle_t handle, void* buffer, tmsize_t n )
@@ -775,33 +971,36 @@ private:
     toff_t m_buf_pos;
 };
 
-static bool readParam(const std::vector<int>& params, int key, int& value)
-{
-    for (size_t i = 0; i + 1 < params.size(); i += 2)
-    {
-        if (params[i] == key)
-        {
-            value = params[i + 1];
-            return true;
-        }
-    }
-    return false;
-}
+#define PARAM2TAG(a) {IMWRITE_TIFF_STR_##a,  TIFFTAG_##a}
+typedef std::map<ImwriteFlags, int> StringParamTagMap;
+static StringParamTagMap stringParamTagMap {
+        PARAM2TAG(IMAGEDESCRIPTION),
+        PARAM2TAG(DOCUMENTNAME),
+        PARAM2TAG(PAGENAME),
+        PARAM2TAG(MAKE),
+        PARAM2TAG(MODEL),
+        PARAM2TAG(SOFTWARE),
+        PARAM2TAG(DATETIME),
+        PARAM2TAG(COPYRIGHT)
+};
+#undef PARAM2TAG
 
-bool TiffEncoder::writeLibTiff( const std::vector<Mat>& img_vec, const std::vector<int>& params)
+bool TiffEncoder::writeLibTiff( const std::vector<Mat>& img_vec, const std::vector<int>& params, const std::map<int, String>& sparams)
 {
     // do NOT put "wb" as the mode, because the b means "big endian" mode, not "binary" mode.
     // http://www.remotesensing.org/libtiff/man/TIFFOpen.3tiff.html
     TIFF* tif = NULL;
-
     TiffEncoderBufHelper buf_helper(m_buf);
+    int append = 0;
+
+    readParam(params, IMWRITE_TIFF_APPEND, append);
     if ( m_buf )
     {
-        tif = buf_helper.open();
+        tif = buf_helper.open(append);
     }
     else
     {
-        tif = TIFFOpen(m_filename.c_str(), "w");
+        tif = TIFFOpen(m_filename.c_str(), append ? "a" : "w");
     }
     if (!tif)
     {
@@ -813,18 +1012,28 @@ bool TiffEncoder::writeLibTiff( const std::vector<Mat>& img_vec, const std::vect
     int compression = COMPRESSION_LZW;
     int predictor = PREDICTOR_HORIZONTAL;
     int resUnit = -1, dpiX = -1, dpiY = -1;
+    int page1 = -1, page2 = 0;
+
+    if(readParam(params, IMWRITE_DPIX, dpiX)) {
+        resUnit = RESUNIT_INCH;
+    }
+
+    if(readParam(params, IMWRITE_DPIY, dpiY)) {
+        resUnit = RESUNIT_INCH;
+    }
 
     readParam(params, IMWRITE_TIFF_COMPRESSION, compression);
-    readParam(params, TIFFTAG_PREDICTOR, predictor);
+    readParam(params, IMWRITE_TIFF_PREDICTOR, predictor);
     readParam(params, IMWRITE_TIFF_RESUNIT, resUnit);
     readParam(params, IMWRITE_TIFF_XDPI, dpiX);
     readParam(params, IMWRITE_TIFF_YDPI, dpiY);
+    readParam(params, IMWRITE_TIFF_PAGENUMBER1, page1);
+    readParam(params, IMWRITE_TIFF_PAGENUMBER2, page2);
 
     //Iterate through each image in the vector and write them out as Tiff directories
     for (size_t page = 0; page < img_vec.size(); page++)
     {
         const Mat& img = img_vec[page];
-        CV_Assert(!img.empty());
         int channels = img.channels();
         int width = img.cols, height = img.rows;
         int type = img.type();
@@ -884,10 +1093,9 @@ bool TiffEncoder::writeLibTiff( const std::vector<Mat>& img_vec, const std::vect
 
         const int bitsPerByte = 8;
         size_t fileStep = (width * channels * bitsPerChannel) / bitsPerByte;
-        CV_Assert(fileStep > 0);
 
         int rowsPerStrip = (int)((1 << 13) / fileStep);
-        readParam(params, TIFFTAG_ROWSPERSTRIP, rowsPerStrip);
+        readParam(params, IMWRITE_TIFF_ROWSPERSTRIP, rowsPerStrip);
         rowsPerStrip = std::max(1, std::min(height, rowsPerStrip));
 
         int colorspace = channels > 1 ? PHOTOMETRIC_RGB : PHOTOMETRIC_MINISBLACK;
@@ -917,6 +1125,16 @@ bool TiffEncoder::writeLibTiff( const std::vector<Mat>& img_vec, const std::vect
         if (dpiY >= 0)
         {
             CV_TIFF_CHECK_CALL(TIFFSetField(tif, TIFFTAG_YRESOLUTION, (float)dpiY));
+        }
+        if(page1 >= 0 && page2 >= 0) {
+            CV_TIFF_CHECK_CALL(TIFFSetField(tif, TIFFTAG_PAGENUMBER, page1, page2));
+        }
+        for(StringParamTagMap::const_iterator itr = stringParamTagMap.begin(); itr != stringParamTagMap.end(); ++itr) {
+            CV_Assert(itr->second);
+            String str;
+            if(readParam(sparams, itr->first, str)) {
+                CV_TIFF_CHECK_CALL(TIFFSetField(tif, itr->second, str.c_str()));
+            }
         }
 
         // row buffer, because TIFFWriteScanline modifies the original data!
@@ -962,6 +1180,11 @@ bool TiffEncoder::writeLibTiff( const std::vector<Mat>& img_vec, const std::vect
     return true;
 }
 
+static const std::map<int, String> empty_int_String_map;
+bool TiffEncoder::writeLibTiff( const std::vector<Mat>& img_vec, const std::vector<int>& params ) {
+    return writeLibTiff(img_vec, params, empty_int_String_map);
+}
+
 bool TiffEncoder::write_32FC3_SGILOG(const Mat& _img, void* tif_)
 {
     TIFF* tif = (TIFF*)tif_;
@@ -988,21 +1211,26 @@ bool TiffEncoder::write_32FC3_SGILOG(const Mat& _img, void* tif_)
     return true;
 }
 
-bool TiffEncoder::writemulti(const std::vector<Mat>& img_vec, const std::vector<int>& params)
-{
-    return writeLibTiff(img_vec, params);
-}
-
 bool  TiffEncoder::write( const Mat& img, const std::vector<int>& params)
 {
-    int type = img.type();
-    int depth = CV_MAT_DEPTH(type);
+    return write(img, params, empty_int_String_map);
+}
 
-    CV_CheckType(type, depth == CV_8U || depth == CV_16U || depth == CV_32F || depth == CV_64F, "");
-
+bool TiffEncoder::write( const Mat& img, const std::vector<int>& iparams, const std::map<int, String> &sparams )
+{
     std::vector<Mat> img_vec;
     img_vec.push_back(img);
-    return writeLibTiff(img_vec, params);
+    return writemulti(img_vec, iparams, sparams);
+}
+
+bool TiffEncoder::writemulti(const std::vector<Mat>& img_vec, const std::vector<int>& params)
+{
+    return writemulti(img_vec, params, empty_int_String_map);
+}
+
+bool TiffEncoder::writemulti(const std::vector<Mat>& img_vec, const std::vector<int>& iparams, const std::map<int, String> &sparams)
+{
+    return writeLibTiff(img_vec, iparams, sparams);
 }
 
 } // namespace

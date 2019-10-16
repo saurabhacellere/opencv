@@ -78,6 +78,7 @@ enum AppMarkerTypes
  */
 enum ExifTagName
 {
+    DOCUMENT_NAME           = 0x010D,   ///< Document Name: ASCII-string
     IMAGE_DESCRIPTION       = 0x010E,   ///< Image Description: ASCII string
     MAKE                    = 0x010F,   ///< Description of manufacturer: ASCII string
     MODEL                   = 0x0110,   ///< Description of camera model: ASCII string
@@ -199,7 +200,7 @@ private:
     bool checkTagMark() const;
 
     size_t getFieldSize ();
-    size_t getNumDirEntry( const size_t offsetNumDir ) const;
+    size_t getNumDirEntry() const;
     uint32_t getStartOffset() const;
     uint16_t getExifTag( const size_t offset ) const;
     uint16_t getU16( const size_t offset ) const;
@@ -224,6 +225,9 @@ private:
 
 private:
     static const uint16_t tagMarkRequired = 0x2A;
+
+    //offset to the _number-of-directory-entry_ field
+    static const size_t offsetNumDir = 8;
 
     //max size of data in tag.
     //'DDDDDDDD' contains the value of that Tag. If its size is over 4bytes,

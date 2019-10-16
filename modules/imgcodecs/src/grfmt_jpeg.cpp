@@ -52,7 +52,7 @@
 #include <stdio.h>
 #include <setjmp.h>
 
-// the following defines are a hack to avoid multiple problems with frame pointer handling and setjmp
+// the following defines are a hack to avoid multiple problems with frame ponter handling and setjmp
 // see http://gcc.gnu.org/ml/gcc/2011-10/msg00324.html for some details
 #define mingw_getsp(...) 0
 #define __builtin_frame_address(...) 0
@@ -204,8 +204,32 @@ ImageDecoder JpegDecoder::newDecoder() const
     return makePtr<JpegDecoder>();
 }
 
-bool  JpegDecoder::readHeader()
+static void setRes(const String &name, UINT16 res, UINT8 unit, std::map<String, String> &p) {
+    switch (unit) {
+        case 0: // none
+            p[name] = BaseImageDecoder::toString(-res);
+            break;
+
+        case 1: // inch
+            p[name] = BaseImageDecoder::toString(res);
+            break;
+
+        case 2: // cm
+            p[name] = BaseImageDecoder::toString(res * 2.54);
+            break;
+    }
+}
+
+static void setRes(jpeg_decompress_struct *cinfo, std::map<String, String> *properties) {
+    if(!cinfo || !properties) return;
+    std::map<String, String> &p = *properties;
+    setRes(BaseImageDecoder::dpi_x, cinfo->X_density, cinfo->density_unit, p);
+    setRes(BaseImageDecoder::dpi_y, cinfo->Y_density, cinfo->density_unit, p);
+}
+
+bool  JpegDecoder::readHeader(std::map<String, String> *properties)
 {
+    if(properties) properties->clear();
     volatile bool result = false;
     close();
 
@@ -386,7 +410,7 @@ int my_jpeg_load_dht (struct jpeg_decompress_struct *info, unsigned char *dht,
  * based on a message of Laurent Pinchart on the video4linux mailing list
  ***************************************************************************/
 
-bool  JpegDecoder::readData( Mat& img )
+bool  JpegDecoder::readData( Mat& img, std::map<String, String> *properties )
 {
     volatile bool result = false;
     size_t step = img.step;
@@ -397,6 +421,8 @@ bool  JpegDecoder::readData( Mat& img )
         jpeg_decompress_struct* cinfo = &((JpegState*)m_state)->cinfo;
         JpegErrorMgr* jerr = &((JpegState*)m_state)->jerr;
         JSAMPARRAY buffer = 0;
+
+        setRes(cinfo, properties);
 
         if( setjmp( jerr->setjmp_buffer ) == 0 )
         {
@@ -601,64 +627,55 @@ bool JpegEncoder::write( const Mat& img, const std::vector<int>& params )
         int rst_interval = 0;
         int luma_quality = -1;
         int chroma_quality = -1;
+        int dpix = -1;
+        int dpiy = -1;
 
-        for( size_t i = 0; i < params.size(); i += 2 )
-        {
-            if( params[i] == CV_IMWRITE_JPEG_QUALITY )
-            {
-                quality = params[i+1];
-                quality = MIN(MAX(quality, 0), 100);
-            }
+        readParam(params, IMWRITE_JPEG_PROGRESSIVE, progressive);
+        readParam(params, IMWRITE_JPEG_OPTIMIZE, optimize);
+        readParam(params, IMWRITE_JPEG_RST_INTERVAL, rst_interval, 0, 65535);
+        readParam(params, IMWRITE_DPIX, dpix);
+        readParam(params, IMWRITE_DPIY, dpiy);
 
-            if( params[i] == CV_IMWRITE_JPEG_PROGRESSIVE )
-            {
-                progressive = params[i+1];
-            }
+        // order of parameters matters, so evaluate in loop
+        for( size_t i = 0; i < params.size(); i += 2 ) {
+            switch(params[i]) {
+                case IMWRITE_JPEG_QUALITY:
+                    quality = limitParam(params[i + 1], 0, 100);
+                    break;
 
-            if( params[i] == CV_IMWRITE_JPEG_OPTIMIZE )
-            {
-                optimize = params[i+1];
-            }
-
-            if( params[i] == CV_IMWRITE_JPEG_LUMA_QUALITY )
-            {
-                if (params[i+1] >= 0)
-                {
-                    luma_quality = MIN(MAX(params[i+1], 0), 100);
-
-                    quality = luma_quality;
-
-                    if (chroma_quality < 0)
-                    {
-                        chroma_quality = luma_quality;
+                case IMWRITE_JPEG_LUMA_QUALITY:
+                    if (params[i + 1] >= 0) {
+                        quality = luma_quality = limitParam(params[i + 1], 0, 100);
+                        if (chroma_quality < 0) {
+                            chroma_quality = luma_quality;
+                        }
                     }
-                }
-            }
+                    break;
 
-            if( params[i] == CV_IMWRITE_JPEG_CHROMA_QUALITY )
-            {
-                if (params[i+1] >= 0)
-                {
-                    chroma_quality = MIN(MAX(params[i+1], 0), 100);
-                }
-            }
-
-            if( params[i] == CV_IMWRITE_JPEG_RST_INTERVAL )
-            {
-                rst_interval = params[i+1];
-                rst_interval = MIN(MAX(rst_interval, 0), 65535L);
+                case IMWRITE_JPEG_CHROMA_QUALITY:
+                    if (params[i + 1] >= 0) {
+                        chroma_quality = limitParam(params[i + 1], 0, 100);
+                    }
+                    break;
             }
         }
 
         jpeg_set_defaults( &cinfo );
         cinfo.restart_interval = rst_interval;
 
-        jpeg_set_quality( &cinfo, quality,
-                          TRUE /* limit to baseline-JPEG values */ );
+        jpeg_set_quality( &cinfo, quality, TRUE /* limit to baseline-JPEG values */ );
         if( progressive )
             jpeg_simple_progression( &cinfo );
         if( optimize )
             cinfo.optimize_coding = TRUE;
+        if(dpix >= 0) {
+            cinfo.X_density = (UINT16)dpix;
+            cinfo.density_unit = 1; // dpi
+        }
+        if(dpiy >= 0) {
+            cinfo.Y_density = (UINT16)dpiy;
+            cinfo.density_unit = 1; // dpi
+        }
 
 #if JPEG_LIB_VERSION >= 70
         if (luma_quality >= 0 && chroma_quality >= 0)

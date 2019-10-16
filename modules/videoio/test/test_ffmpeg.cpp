@@ -95,6 +95,43 @@ TEST(videoio_ffmpeg, image)
 
 //==========================================================================
 
+TEST(videoio_ffmpeg, raw)
+{
+    if (!videoio_registry::hasBackend(CAP_FFMPEG))
+        throw SkipTestException("FFmpeg backend was not found");
+    const vector<string> fileNames = { "video/big_buck_bunny.h264", "video/big_buck_bunny.h265" };
+    const vector<string> fileNamesOut = { tempfile(".h264"), tempfile(".h265") };
+
+    for (size_t i = 0; i < fileNames.size(); i++)
+    {
+        // Write encoded video read using VideoContainer to tmp file
+        {
+            VideoContainer raw(findDataFile(fileNames[i]), CAP_FFMPEG);
+            ASSERT_TRUE(raw.isOpened());
+            std::ofstream file(fileNamesOut[i], ios::out | ios::trunc | std::ios::binary);
+            unsigned char* data = 0;
+            size_t size = 0;
+            while (raw.read(&data, &size))
+                file.write(reinterpret_cast<char*>(data), size);
+        }
+
+        // Check decoded frames read from original media are equal to frames decoded from tmp file
+        {
+            VideoCapture capReference(findDataFile(fileNames[i]), CAP_FFMPEG);
+            ASSERT_TRUE(capReference.isOpened());
+            VideoCapture capActual(fileNamesOut[i].c_str(), CAP_FFMPEG);
+            ASSERT_TRUE(capActual.isOpened());
+            Mat reference, actual;
+            while (capReference.read(reference))
+            {
+                capActual.read(actual);
+                ASSERT_EQ(0, countNonZero(actual != reference));
+            }
+        }
+    }
+}
+
+//==========================================================================
 
 static void generateFrame(Mat &frame, unsigned int i, const Point &center, const Scalar &color)
 {

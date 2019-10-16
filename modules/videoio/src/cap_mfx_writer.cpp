@@ -6,7 +6,6 @@
 #include "opencv2/core/base.hpp"
 #include "cap_mfx_common.hpp"
 #include "opencv2/imgproc/hal/hal.hpp"
-#include "cap_interface.hpp"
 
 using namespace std;
 using namespace cv;
@@ -30,20 +29,14 @@ inline mfxU32 codecIdByFourCC(int fourcc)
         return (mfxU32)-1;
 }
 
-VideoWriter_IntelMFX::VideoWriter_IntelMFX(const String &filename, int _fourcc, double fps, Size frameSize_, bool)
-    : session(0), plugin(0), deviceHandler(0), bs(0), encoder(0), pool(0), outSurface(NULL), frameSize(frameSize_), good(false)
+VideoWriter_IntelMFX::VideoWriter_IntelMFX(const String &filename, int _fourcc, double fps, Size frameSize_, bool , VideoCaptureMode cap)
+    : session(0), plugin(0), deviceHandler(0), bs(0), encoder(0), pool(0), frameSize(frameSize_), good(false)
 {
     mfxStatus res = MFX_ERR_NONE;
 
     if (frameSize.width % 2 || frameSize.height % 2)
     {
         MSG(cerr << "MFX: Invalid frame size passed to encoder" << endl);
-        return;
-    }
-
-    if (fps <= 0)
-    {
-        MSG(cerr << "MFX: Invalid FPS passed to encoder" << endl);
         return;
     }
 
@@ -251,11 +244,11 @@ bool VideoWriter_IntelMFX::write_one(cv::InputArray bgr)
     }
 }
 
-Ptr<IVideoWriter> cv::create_MFX_writer(const std::string &filename, int _fourcc, double fps, const Size &frameSize, bool isColor)
+Ptr<VideoWriter_IntelMFX> VideoWriter_IntelMFX::create(const String &filename, int _fourcc, double fps, Size frameSize, bool isColor , VideoCaptureMode cap)
 {
     if (codecIdByFourCC(_fourcc) > 0)
     {
-        Ptr<VideoWriter_IntelMFX> a = makePtr<VideoWriter_IntelMFX>(filename, _fourcc, fps, frameSize, isColor);
+        Ptr<VideoWriter_IntelMFX> a = makePtr<VideoWriter_IntelMFX>(filename, _fourcc, fps, frameSize, isColor, cap);
         if (a->isOpened())
             return a;
     }

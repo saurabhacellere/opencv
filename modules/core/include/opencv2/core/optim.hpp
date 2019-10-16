@@ -219,10 +219,10 @@ converge to it. Another obvious restriction is that it should be possible to com
 a function at any point, thus it is preferable to have analytic expression for gradient and
 computational burden should be born by the user.
 
-The latter responsibility is accomplished via the getGradient method of a
+The latter responsibility is accompilished via the getGradient method of a
 MinProblemSolver::Function interface (which represents function being optimized). This method takes
 point a point in *n*-dimensional space (first argument represents the array of coordinates of that
-point) and compute its gradient (it should be stored in the second argument as an array).
+point) and comput its gradient (it should be stored in the second argument as an array).
 
 @note class ConjGradSolver thus does not add any new methods to the basic MinProblemSolver interface.
 
@@ -251,6 +251,50 @@ public:
     */
     static Ptr<ConjGradSolver> create(const Ptr<MinProblemSolver::Function>& f=Ptr<ConjGradSolver::Function>(),
                                       TermCriteria termcrit=TermCriteria(TermCriteria::MAX_ITER+TermCriteria::EPS,5000,0.000001));
+};
+
+/** @brief This class is used to perform the non-linear non-constrained minimization of a function,
+defined on an `n`-dimensional Euclidean space, using the **Broyden-Fletcher-Goldfarb-Shanno method**.
+The basic idea about the method can be obtained from
+<http://en.wikipedia.org/wiki/Broyden–Fletcher–Goldfarb–Shanno_algorithm>
+
+The BFGS method is a quasi-Newton method. BFGS methods are not guaranteed to converge to the global optimal point unless the function has a quadratic Taylor expansion near an optimum. However, BFGS has proven to have very good practical performance.
+*/
+class CV_EXPORTS BFGSSolver : public MinProblemSolver
+{
+public:
+    /** @brief This function returns the reference to the ready-to-use BFGSSolver object.
+
+    @param f Pointer to the function that will be minimized, similarly to the one you submit via
+    MinProblemSolver::setFunction.
+    @param termcrit Terminal criteria to the algorithm, similarly to the one you submit via
+    MinProblemSolver::setTermCriteria.
+    */
+    static Ptr<BFGSSolver> create(const Ptr<MinProblemSolver::Function>& f = Ptr<BFGSSolver::Function>(),
+                                  TermCriteria termcrit = TermCriteria(TermCriteria::MAX_ITER + TermCriteria::EPS, 5000, 0.000001));
+};
+
+/** @brief This class is used to perform the non-linear non-constrained minimization of a function,
+defined on an `n`-dimensional Euclidean space, using the **Limited-memory Broyden-Fletcher-Goldfarb-Shanno method**.
+The basic idea about the method can be obtained from
+<http://en.wikipedia.org/wiki/Limited-memory_BFGS>
+
+The L-BFGS method is a quasi-Newton method. L-BFGS approximates the regular BFGS algorithm using a reduced amount of memory.
+
+Like the original BFGS, L-BFGS uses an estimation to the inverse Hessian matrix, but where BFGS stores a dense NxN approximation, L-BFGS stores only a few vectors that represent the approximation implicitly. Thus the L-BFGS method is better suited for optimization problems with a large number of variables.
+*/
+class CV_EXPORTS LBFGSSolver : public MinProblemSolver
+{
+public:
+    /** @brief This function returns the reference to the ready-to-use LBFGSSolver object.
+
+    @param f Pointer to the function that will be minimized, similarly to the one you submit via
+    MinProblemSolver::setFunction.
+    @param termcrit Terminal criteria to the algorithm, similarly to the one you submit via
+    MinProblemSolver::setTermCriteria.
+    */
+    static Ptr<LBFGSSolver> create(const Ptr<MinProblemSolver::Function>& f = Ptr<LBFGSSolver::Function>(),
+                                   TermCriteria termcrit = TermCriteria(TermCriteria::MAX_ITER + TermCriteria::EPS, 5000, 0.000001));
 };
 
 //! return codes for cv::solveLP() function
@@ -293,7 +337,7 @@ and the remaining to \f$A\f$. It should contain 32- or 64-bit floating point num
 formulation above. It will contain 64-bit floating point numbers.
 @return One of cv::SolveLPResult
  */
-CV_EXPORTS_W int solveLP(InputArray Func, InputArray Constr, OutputArray z);
+CV_EXPORTS_W int solveLP(const Mat& Func, const Mat& Constr, Mat& z);
 
 //! @}
 

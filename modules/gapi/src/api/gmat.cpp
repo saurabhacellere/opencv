@@ -6,15 +6,11 @@
 
 
 #include "precomp.hpp"
-
-#include <ade/util/iota_range.hpp>
-#include <ade/util/algorithm.hpp>
-
 #include <opencv2/gapi/opencv_includes.hpp>
 #include <opencv2/gapi/own/mat.hpp> //gapi::own::Mat
-#include <opencv2/gapi/gmat.hpp>
 
-#include "api/gorigin.hpp"
+#include "opencv2/gapi/gmat.hpp"
+#include "api/gapi_priv.hpp" // GOrigin
 
 // cv::GMat public implementation //////////////////////////////////////////////
 cv::GMat::GMat()
@@ -53,31 +49,20 @@ namespace{
 #if !defined(GAPI_STANDALONE)
 cv::GMatDesc cv::descr_of(const cv::Mat &mat)
 {
-    const auto mat_dims = mat.size.dims();
-
-    if (mat_dims == 2)
-        return GMatDesc{mat.depth(), mat.channels(), {mat.cols, mat.rows}};
-
-    std::vector<int> dims(mat_dims);
-    for (auto i : ade::util::iota(mat_dims)) {
-        // Note: cv::MatSize is not iterable
-        dims[i] = mat.size[i];
-    }
-    return GMatDesc{mat.depth(), std::move(dims)};
+    return GMatDesc{mat.depth(), mat.channels(), {mat.cols, mat.rows}};
 }
 
 cv::GMatDesc cv::descr_of(const cv::UMat &mat)
 {
-    GAPI_Assert(mat.size.dims() == 2);
     return GMatDesc{ mat.depth(), mat.channels(),{ mat.cols, mat.rows } };
 }
 
-cv::GMetaArgs cv::descrs_of(const std::vector<cv::Mat> &vec)
+cv::GMetaArgs cv::descr_of(const std::vector<cv::Mat> &vec)
 {
     return vec_descr_of(vec);
 }
 
-cv::GMetaArgs cv::descrs_of(const std::vector<cv::UMat> &vec)
+cv::GMetaArgs cv::descr_of(const std::vector<cv::UMat> &vec)
 {
     return vec_descr_of(vec);
 }
@@ -85,12 +70,10 @@ cv::GMetaArgs cv::descrs_of(const std::vector<cv::UMat> &vec)
 
 cv::GMatDesc cv::gapi::own::descr_of(const cv::gapi::own::Mat &mat)
 {
-    return (mat.dims.empty())
-        ? GMatDesc{mat.depth(), mat.channels(), {mat.cols, mat.rows}}
-        : GMatDesc{mat.depth(), mat.dims};
+    return GMatDesc{mat.depth(), mat.channels(), {mat.cols, mat.rows}};
 }
 
-cv::GMetaArgs cv::gapi::own::descrs_of(const std::vector<cv::gapi::own::Mat> &vec)
+cv::GMetaArgs cv::gapi::own::descr_of(const std::vector<cv::gapi::own::Mat> &vec)
 {
     return vec_descr_of(vec);
 }
@@ -116,32 +99,9 @@ std::ostream& operator<<(std::ostream& os, const cv::GMatDesc &desc)
         break;
     }
 
-    os << "C" << desc.chan;
-    if (desc.planar) os << "p";
-    os << " ";
+    os << "C" << desc.chan << " ";
     os << desc.size.width << "x" << desc.size.height;
 
     return os;
 }
-
-namespace {
-template<typename M> inline bool canDescribeHelper(const GMatDesc& desc, const M& mat)
-{
-    const auto mat_desc = desc.planar ? descr_of(mat).asPlanar(desc.chan) : descr_of(mat);
-    return desc == mat_desc;
 }
-} // anonymous namespace
-
-bool GMatDesc::canDescribe(const cv::gapi::own::Mat& mat) const
-{
-    return canDescribeHelper(*this, mat);
-}
-
-#if !defined(GAPI_STANDALONE)
-bool GMatDesc::canDescribe(const cv::Mat& mat) const
-{
-    return canDescribeHelper(*this, mat);
-}
-#endif
-
-}// namespace cv

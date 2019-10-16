@@ -11,7 +11,7 @@
 #include "opencv2/gapi/gproto.hpp"
 #include "opencv2/gapi/garg.hpp"
 
-#include "api/gorigin.hpp"
+#include "api/gapi_priv.hpp"
 
 namespace cv {
 namespace gimpl {

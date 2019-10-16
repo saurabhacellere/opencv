@@ -111,7 +111,6 @@ public:
     void startTraining( const Ptr<TrainData>& trainData, int flags ) CV_OVERRIDE
     {
         CV_TRACE_FUNCTION();
-        CV_Assert(!trainData.empty());
         DTreesImpl::startTraining(trainData, flags);
         int nvars = w->data->getNVars();
         int i, m = rparams.nactiveVars > 0 ? rparams.nactiveVars : cvRound(std::sqrt((double)nvars));
@@ -134,7 +133,6 @@ public:
     bool train( const Ptr<TrainData>& trainData, int flags ) CV_OVERRIDE
     {
         CV_TRACE_FUNCTION();
-        CV_Assert(!trainData.empty());
         startTraining(trainData, flags);
         int treeidx, ntrees = (rparams.termCrit.type & TermCriteria::COUNT) != 0 ?
             rparams.termCrit.maxCount : 10000;
@@ -466,7 +464,6 @@ public:
     bool train( const Ptr<TrainData>& trainData, int flags ) CV_OVERRIDE
     {
         CV_TRACE_FUNCTION();
-        CV_Assert(!trainData.empty());
         if (impl.getCVFolds() != 0)
             CV_Error(Error::StsBadArg, "Cross validation for RTrees is not implemented");
         return impl.train(trainData, flags);

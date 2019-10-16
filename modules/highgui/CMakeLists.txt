@@ -125,8 +125,8 @@ elseif(HAVE_COCOA)
   list(APPEND HIGHGUI_LIBRARIES "-framework Cocoa")
 endif()
 
-if(TRUE)
-  # these variables are set by 'ocv_append_build_options(HIGHGUI ...)'
+if(UNIX)
+  #these variables are set by CHECK_MODULE macro
   foreach(P ${HIGHGUI_INCLUDE_DIRS})
     ocv_include_directories(${P})
   endforeach()

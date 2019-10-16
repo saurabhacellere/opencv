@@ -198,7 +198,7 @@ public:
     virtual bool supportBackend(int backendId) CV_OVERRIDE
     {
         return backendId == DNN_BACKEND_OPENCV ||
-               (backendId == DNN_BACKEND_INFERENCE_ENGINE && !_locPredTransposed && _bboxesNormalized);
+               (backendId == DNN_BACKEND_INFERENCE_ENGINE && !_locPredTransposed && _bboxesNormalized && !_clip);
     }
 
     bool getMemoryShapes(const std::vector<MatShape> &inputs,
@@ -206,9 +206,8 @@ public:
                          std::vector<MatShape> &outputs,
                          std::vector<MatShape> &internals) const CV_OVERRIDE
     {
-        const int num = inputs[0][0];
         CV_Assert(inputs.size() >= 3);
-        CV_Assert(num == inputs[1][0]);
+        CV_Assert(inputs[0][0] == inputs[1][0]);
 
         int numPriors = inputs[2][2] / 4;
         CV_Assert((numPriors * _numLocClasses * 4) == total(inputs[0], 1));
@@ -217,10 +216,10 @@ public:
 
         // num() and channels() are 1.
         // Since the number of bboxes to be kept is unknown before nms, we manually
-        // set it to maximal number of detections, [keep_top_k] parameter multiplied by batch size.
+        // set it to maximal number of detections, [keep_top_k] parameter.
         // Each row is a 7 dimension std::vector, which stores
         // [image_id, label, confidence, xmin, ymin, xmax, ymax]
-        outputs.resize(1, shape(1, 1, _keepTopK * num, 7));
+        outputs.resize(1, shape(1, 1, _keepTopK, 7));
 
         return false;
     }
@@ -312,13 +311,15 @@ public:
     {
         std::vector<UMat> inputs;
         std::vector<UMat> outputs;
-        outs.getUMatVector(outputs);
 
         bool use_half = (inps.depth() == CV_16S);
         if (use_half)
         {
             std::vector<UMat> orig_inputs;
+            std::vector<UMat> orig_outputs;
+
             inps.getUMatVector(orig_inputs);
+            outs.getUMatVector(orig_outputs);
 
             inputs.resize(orig_inputs.size());
             for (size_t i = 0; i < orig_inputs.size(); i++)
@@ -327,6 +328,7 @@ public:
         else
         {
             inps.getUMatVector(inputs);
+            outs.getUMatVector(outputs);
         }
 
         std::vector<LabelBBox> allDecodedBBoxes;
@@ -359,17 +361,19 @@ public:
 
         if (numKept == 0)
         {
-            outputs[0].setTo(0);
+            // Set confidences to zeros.
+            Range ranges[] = {Range::all(), Range::all(), Range::all(), Range(2, 3)};
+            if (use_half)
+            {
+                std::vector<UMat> orig_outputs;
+                outs.getUMatVector(orig_outputs);
+                orig_outputs[0](ranges).setTo(0);
+            } else
+                outputs[0](ranges).setTo(0);
             return true;
         }
-
-        UMat umat = use_half ? UMat::zeros(4, outputs[0].size, CV_32F) : outputs[0];
-
-        if (!use_half)
-            umat.setTo(0);
-
-        // If there are valid detections
-        if (numKept > 0)
+        int outputShape[] = {1, 1, (int)numKept, 7};
+        UMat umat = UMat(4, outputShape, CV_32F);
         {
             Mat mat = umat.getMat(ACCESS_WRITE);
             float* outputsData = mat.ptr<float>();
@@ -388,7 +392,16 @@ public:
         {
             UMat half_umat;
             convertFp16(umat, half_umat);
-            outs.assign(std::vector<UMat>(1, half_umat));
+
+            std::vector<UMat> orig_outputs;
+            outs.getUMatVector(orig_outputs);
+            orig_outputs.clear();
+            orig_outputs.push_back(half_umat);
+            outs.assign(orig_outputs);
+        } else {
+            outputs.clear();
+            outputs.push_back(umat);
+            outs.assign(outputs);
         }
 
         return true;
@@ -470,12 +483,15 @@ public:
             numKept += processDetections_(allDecodedBBoxes[i], allConfidenceScores[i], allIndices);
         }
 
-        outputs[0].setTo(0);
-
-        // If there is no detections
         if (numKept == 0)
+        {
+            // Set confidences to zeros.
+            Range ranges[] = {Range::all(), Range::all(), Range::all(), Range(2, 3)};
+            outputs[0](ranges).setTo(0);
             return;
-
+        }
+        int outputShape[] = {1, 1, (int)numKept, 7};
+        outputs[0].create(4, outputShape, CV_32F);
         float* outputsData = outputs[0].ptr<float>();
 
         size_t count = 0;
@@ -686,6 +702,8 @@ public:
                 prior_width += 1.0f;
                 prior_height += 1.0f;
             }
+            CV_Assert(prior_width > 0);
+            CV_Assert(prior_height > 0);
             float prior_center_x = prior_bbox.xmin + prior_width * .5;
             float prior_center_y = prior_bbox.ymin + prior_height * .5;
 
@@ -918,16 +936,17 @@ public:
         }
     }
 
-#ifdef HAVE_INF_ENGINE
     virtual Ptr<BackendNode> initInfEngine(const std::vector<Ptr<BackendWrapper> >&) CV_OVERRIDE
     {
+#ifdef HAVE_INF_ENGINE
+#if INF_ENGINE_VER_MAJOR_GE(INF_ENGINE_RELEASE_2018R5)
         InferenceEngine::Builder::DetectionOutputLayer ieLayer(name);
 
         ieLayer.setNumClasses(_numClasses);
         ieLayer.setShareLocation(_shareLocation);
         ieLayer.setBackgroudLabelId(_backgroundLabelId);
         ieLayer.setNMSThreshold(_nmsThreshold);
-        ieLayer.setTopK(_topK > 0 ? _topK : _keepTopK);
+        ieLayer.setTopK(_topK);
         ieLayer.setKeepTopK(_keepTopK);
         ieLayer.setConfidenceThreshold(_confidenceThreshold);
         ieLayer.setVariantEncodedInTarget(_varianceEncodedInTarget);
@@ -936,11 +955,30 @@ public:
 
         InferenceEngine::Builder::Layer l = ieLayer;
         l.getParameters()["eta"] = std::string("1.0");
-        l.getParameters()["clip"] = _clip;
 
         return Ptr<BackendNode>(new InfEngineBackendNode(l));
-    }
+#else
+        InferenceEngine::LayerParams lp;
+        lp.name = name;
+        lp.type = "DetectionOutput";
+        lp.precision = InferenceEngine::Precision::FP32;
+        std::shared_ptr<InferenceEngine::CNNLayer> ieLayer(new InferenceEngine::CNNLayer(lp));
+
+        ieLayer->params["num_classes"] = format("%d", _numClasses);
+        ieLayer->params["share_location"] = _shareLocation ? "1" : "0";
+        ieLayer->params["background_label_id"] = format("%d", _backgroundLabelId);
+        ieLayer->params["nms_threshold"] = format("%f", _nmsThreshold);
+        ieLayer->params["top_k"] = format("%d", _topK);
+        ieLayer->params["keep_top_k"] = format("%d", _keepTopK);
+        ieLayer->params["eta"] = "1.0";
+        ieLayer->params["confidence_threshold"] = format("%f", _confidenceThreshold);
+        ieLayer->params["variance_encoded_in_target"] = _varianceEncodedInTarget ? "1" : "0";
+        ieLayer->params["code_type"] = "caffe.PriorBoxParameter." + _codeType;
+        return Ptr<BackendNode>(new InfEngineBackendNode(ieLayer));
+#endif
 #endif  // HAVE_INF_ENGINE
+        return Ptr<BackendNode>();
+    }
 };
 
 float util::caffe_box_overlap(const util::NormalizedBBox& a, const util::NormalizedBBox& b)

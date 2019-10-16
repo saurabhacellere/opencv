@@ -76,7 +76,6 @@
 
 //#define ENABLE_TRIM_COL_ROW
 
-// Requires CMake flag: DEBUG_opencv_calib3d=ON
 //#define DEBUG_CHESSBOARD
 #define DEBUG_CHESSBOARD_TIMEOUT 0  // 0 - wait for 'q'
 

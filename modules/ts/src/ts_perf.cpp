@@ -1,7 +1,5 @@
 #include "precomp.hpp"
 
-#include "ts_tags.hpp"
-
 #include <map>
 #include <iostream>
 #include <fstream>
@@ -25,7 +23,7 @@ using namespace cvtest;
 using namespace perf;
 
 int64 TestBase::timeLimitDefault = 0;
-unsigned int TestBase::iterationsLimitDefault = UINT_MAX;
+unsigned int TestBase::iterationsLimitDefault = (unsigned int)(-1);
 int64 TestBase::_timeadjustment = 0;
 
 // Item [0] will be considered the default implementation.
@@ -1001,8 +999,6 @@ void TestBase::Init(const std::vector<std::string> & availableImpls,
         "{   perf_cuda_info_only         |false    |print an information about system and an available CUDA devices and then exit.}"
 #endif
         "{ skip_unstable                 |false    |skip unstable tests }"
-
-        CV_TEST_TAGS_PARAMS
     ;
 
     cv::CommandLineParser args(argc, argv, command_line_keys);
@@ -1149,8 +1145,6 @@ void TestBase::Init(const std::vector<std::string> & availableImpls,
         ::testing::AddGlobalTestEnvironment(new PerfValidationEnvironment());
     }
 
-    activateTestTags(args);
-
     if (!args.check())
     {
         args.printErrors();
@@ -1158,7 +1152,7 @@ void TestBase::Init(const std::vector<std::string> & availableImpls,
     }
 
     timeLimitDefault = param_time_limit == 0.0 ? 1 : (int64)(param_time_limit * cv::getTickFrequency());
-    iterationsLimitDefault = param_force_samples == 0 ? UINT_MAX : param_force_samples;
+    iterationsLimitDefault = param_force_samples == 0 ? (unsigned)(-1) : param_force_samples;
     _timeadjustment = _calibrate();
 }
 
@@ -1197,13 +1191,9 @@ enum PERF_STRATEGY TestBase::getCurrentModulePerformanceStrategy()
 int64 TestBase::_calibrate()
 {
     CV_TRACE_FUNCTION();
-    if (iterationsLimitDefault <= 1)
-        return 0;
-
     class _helper : public ::perf::TestBase
     {
-    public:
-        _helper() { testStrategy = PERF_STRATEGY_BASE; }
+        public:
         performance_metrics& getMetrics() { return calcMetrics(); }
         virtual void TestBody() {}
         virtual void PerfTestBody()
@@ -1214,17 +1204,13 @@ int64 TestBase::_calibrate()
             cv::Mat b(2048, 2048, CV_32S, cv::Scalar(2));
             declare.time(30);
             double s = 0;
-            declare.iterations(20);
-            minIters = nIters = 20;
-            for(; next() && startTimer(); stopTimer())
+            for(declare.iterations(20); next() && startTimer(); stopTimer())
                 s+=a.dot(b);
             declare.time(s);
 
             //self calibration
             SetUp();
-            declare.iterations(1000);
-            minIters = nIters = 1000;
-            for(int iters = 0; next() && startTimer(); iters++, stopTimer()) { /*std::cout << iters << nIters << std::endl;*/ }
+            for(declare.iterations(1000); next() && startTimer(); stopTimer()){}
         }
     };
 
@@ -1883,15 +1869,14 @@ void TestBase::SetUp()
     currentIter = (unsigned int)-1;
     timeLimit = timeLimitDefault;
     times.clear();
-    metrics.terminationReason = performance_metrics::TERM_SKIP_TEST;
 }
 
 void TestBase::TearDown()
 {
     if (metrics.terminationReason == performance_metrics::TERM_SKIP_TEST)
     {
-        //LOGI("\tTest was skipped");
-        //GTEST_SUCCEED() << "Test was skipped";
+        LOGI("\tTest was skipped");
+        GTEST_SUCCEED() << "Test was skipped";
     }
     else
     {
@@ -1990,7 +1975,6 @@ std::string TestBase::getDataPath(const std::string& relativePath)
 
 void TestBase::RunPerfTestBody()
 {
-    metrics.clear();
     try
     {
 #ifdef CV_COLLECT_IMPL_DATA
@@ -2006,7 +1990,7 @@ void TestBase::RunPerfTestBody()
     catch(const SkipTestException&)
     {
         metrics.terminationReason = performance_metrics::TERM_SKIP_TEST;
-        throw;
+        return;
     }
     catch(const PerfSkipTestException&)
     {

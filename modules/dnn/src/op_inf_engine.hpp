@@ -22,11 +22,10 @@
 #define INF_ENGINE_RELEASE_2018R5 2018050000
 #define INF_ENGINE_RELEASE_2019R1 2019010000
 #define INF_ENGINE_RELEASE_2019R2 2019020000
-#define INF_ENGINE_RELEASE_2019R3 2019030000
 
 #ifndef INF_ENGINE_RELEASE
-#warning("IE version have not been provided via command-line. Using 2019R3 by default")
-#define INF_ENGINE_RELEASE INF_ENGINE_RELEASE_2019R3
+#warning("IE version have not been provided via command-line. Using 2019R2 by default")
+#define INF_ENGINE_RELEASE INF_ENGINE_RELEASE_2019R2
 #endif
 
 #define INF_ENGINE_VER_MAJOR_GT(ver) (((INF_ENGINE_RELEASE) / 10000) > ((ver) / 10000))
@@ -114,10 +113,11 @@ private:
     {
         InfEngineReqWrapper() : isReady(true) {}
 
-        void makePromises(const std::vector<Ptr<BackendWrapper> >& outs);
+        void makePromises(const std::vector<Ptr<BackendWrapper> >& outs,
+                          const std::vector<std::string>& outsNames);
 
         InferenceEngine::InferRequest req;
-        std::vector<cv::AsyncPromise> outProms;
+        cv::AsyncPromise outProm;
         std::vector<std::string> outsNames;
         bool isReady;
     };
@@ -131,6 +131,7 @@ private:
     std::vector<std::string> requestedOutputs;
 
     std::set<int> unconnectedLayersIds;
+    std::vector<std::string> outsNames;
 };
 
 class InfEngineBackendNode : public BackendNode
@@ -210,11 +211,11 @@ private:
     InferenceEngine::CNNNetwork t_net;
 };
 
-CV__DNN_INLINE_NS_BEGIN
+CV__DNN_EXPERIMENTAL_NS_BEGIN
 
 bool isMyriadX();
 
-CV__DNN_INLINE_NS_END
+CV__DNN_EXPERIMENTAL_NS_END
 
 #endif  // HAVE_INF_ENGINE
 

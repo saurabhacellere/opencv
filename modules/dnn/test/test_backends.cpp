@@ -157,7 +157,7 @@ TEST_P(DNNTestNetwork, Inception_5h)
 TEST_P(DNNTestNetwork, ENet)
 {
     applyTestTag(target == DNN_TARGET_CPU ? "" : CV_TEST_TAG_MEMORY_512MB);
-    if (backend == DNN_BACKEND_INFERENCE_ENGINE)
+    if (backend == DNN_BACKEND_INFERENCE_ENGINE || backend == DNN_BACKEND_NGRAPH)
         applyTestTag(CV_TEST_TAG_DNN_SKIP_IE);
     if (backend == DNN_BACKEND_OPENCV && target == DNN_TARGET_OPENCL_FP16)
         applyTestTag(CV_TEST_TAG_DNN_SKIP_OPENCL_FP16);
@@ -425,6 +425,6 @@ TEST_P(DNNTestNetwork, FastNeuralStyle_eccv16)
 #endif
 }
 
-INSTANTIATE_TEST_CASE_P(/*nothing*/, DNNTestNetwork, dnnBackendsAndTargets(true, true, false, true));
+INSTANTIATE_TEST_CASE_P(/*nothing*/, DNNTestNetwork, dnnBackendsAndTargets(true, true, false));
 
 }} // namespace

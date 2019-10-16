@@ -55,7 +55,19 @@ public:
         net.setPreferableTarget(target);
 
         net.setInput(inp);
-        Mat out = net.forward("");
+        Mat out = net.forward();
+// net.dumpToFile("densenet.dot");
+//
+// Net netDefault = readNetFromONNX(onnxmodel);
+// ASSERT_FALSE(netDefault.empty());
+//
+// netDefault.setPreferableBackend(DNN_BACKEND_OPENCV);
+// netDefault.setPreferableTarget(target);
+//
+// netDefault.setInput(inp);
+//  ref = netDefault.forward("");
+std::cout << "inp " << inp.size << '\n';
+std::cout << "ref " << ref.size << '\n';
 
         if (useSoftmax)
         {
@@ -86,8 +98,8 @@ TEST_P(Test_ONNX_layers, InstanceNorm)
 
 TEST_P(Test_ONNX_layers, MaxPooling)
 {
-    testONNXModels("maxpooling", npy, 0, 0, false, false);
-    testONNXModels("two_maxpooling", npy, 0, 0, false, false);
+    testONNXModels("maxpooling");
+    testONNXModels("two_maxpooling");
 }
 
 TEST_P(Test_ONNX_layers, Convolution)
@@ -132,7 +144,7 @@ TEST_P(Test_ONNX_layers, Deconvolution3D)
 #if defined(INF_ENGINE_RELEASE)
     applyTestTag(CV_TEST_TAG_DNN_SKIP_IE_2018R5);
 #endif
-    if (backend != DNN_BACKEND_INFERENCE_ENGINE || target != DNN_TARGET_CPU)
+    if (backend == DNN_BACKEND_OPENCV || target != DNN_TARGET_CPU)
         throw SkipTestException("Only DLIE backend on CPU is supported");
     testONNXModels("deconv3d");
     testONNXModels("deconv3d_bias");
@@ -195,7 +207,7 @@ TEST_P(Test_ONNX_layers, Eltwise3D)
 #if defined(INF_ENGINE_RELEASE) && INF_ENGINE_VER_MAJOR_LT(2019010000)
     throw SkipTestException("Test is enabled starts from 2019R1");
 #endif
-    if (backend == DNN_BACKEND_INFERENCE_ENGINE && target != DNN_TARGET_CPU)
+    if ((backend == DNN_BACKEND_NGRAPH || backend == DNN_BACKEND_INFERENCE_ENGINE) && target != DNN_TARGET_CPU)
         throw SkipTestException("Only CPU on DLIE backend is supported");
     testONNXModels("eltwise3d");
 }
@@ -212,7 +224,7 @@ TEST_P(Test_ONNX_layers, MaxPooling3D)
 #endif
     if (target != DNN_TARGET_CPU)
         throw SkipTestException("Only CPU is supported");
-    testONNXModels("max_pool3d", npy, 0, 0, false, false);
+    testONNXModels("max_pool3d");
 }
 
 TEST_P(Test_ONNX_layers, AvePooling3D)
@@ -350,7 +362,7 @@ TEST_P(Test_ONNX_layers, Softmax)
 
 TEST_P(Test_ONNX_layers, Split_EltwiseMax)
 {
-    if (backend == DNN_BACKEND_INFERENCE_ENGINE)
+    if (backend == DNN_BACKEND_INFERENCE_ENGINE || backend == DNN_BACKEND_NGRAPH)
         applyTestTag(CV_TEST_TAG_DNN_SKIP_IE);
     testONNXModels("split_max");
 }
@@ -422,22 +434,13 @@ TEST_P(Test_ONNX_nets, Googlenet)
 TEST_P(Test_ONNX_nets, CaffeNet)
 {
     applyTestTag(target == DNN_TARGET_CPU ? CV_TEST_TAG_MEMORY_512MB : CV_TEST_TAG_MEMORY_1GB);
-#if defined(INF_ENGINE_RELEASE) && INF_ENGINE_VER_MAJOR_EQ(2019030000)
-    if (backend == DNN_BACKEND_INFERENCE_ENGINE && target == DNN_TARGET_MYRIAD
-        && getInferenceEngineVPUType() == CV_DNN_INFERENCE_ENGINE_VPU_TYPE_MYRIAD_X)
-        applyTestTag(CV_TEST_TAG_DNN_SKIP_IE_MYRIAD_X, CV_TEST_TAG_DNN_SKIP_IE_2019R3);
-#endif
     testONNXModels("caffenet", pb);
 }
 
 TEST_P(Test_ONNX_nets, RCNN_ILSVRC13)
 {
     applyTestTag(target == DNN_TARGET_CPU ? CV_TEST_TAG_MEMORY_512MB : CV_TEST_TAG_MEMORY_1GB);
-#if defined(INF_ENGINE_RELEASE) && INF_ENGINE_VER_MAJOR_EQ(2019030000)
-    if (backend == DNN_BACKEND_INFERENCE_ENGINE && target == DNN_TARGET_MYRIAD
-        && getInferenceEngineVPUType() == CV_DNN_INFERENCE_ENGINE_VPU_TYPE_MYRIAD_X)
-        applyTestTag(CV_TEST_TAG_DNN_SKIP_IE_MYRIAD_X, CV_TEST_TAG_DNN_SKIP_IE_2019R3);
-#endif
+
     // Reference output values are in range [-4.992, -1.161]
     testONNXModels("rcnn_ilsvrc13", pb, 0.0045);
 }

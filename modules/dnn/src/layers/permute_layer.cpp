@@ -43,7 +43,8 @@
 #include "../precomp.hpp"
 #include "layers_common.hpp"
 #include "../op_inf_engine.hpp"
-#include "../op_vkcom.hpp"
+#include "../ie_ngraph.hpp"
+
 #include <float.h>
 #include <algorithm>
 
@@ -89,7 +90,7 @@ public:
             {
                 CV_Error(Error::StsBadArg,
                          format("Orders of dimensions in Permute layer parameter"
-                                "must be in [0...%zu]", _numAxes - 1));
+                                "must be in [0...%d]", _numAxes - 1));
             }
             if (std::find(_order.begin(), _order.end(), currentOrder) != _order.end())
             {
@@ -106,8 +107,7 @@ public:
     virtual bool supportBackend(int backendId) CV_OVERRIDE
     {
         return backendId == DNN_BACKEND_OPENCV ||
-               (backendId == DNN_BACKEND_INFERENCE_ENGINE && haveInfEngine()) ||
-               (backendId == DNN_BACKEND_VKCOM && haveVulkan());
+               ((backendId == DNN_BACKEND_INFERENCE_ENGINE || backendId == DNN_BACKEND_NGRAPH) && haveInfEngine());
     }
 
     bool getMemoryShapes(const std::vector<MatShape> &inputs,
@@ -372,22 +372,24 @@ public:
         }
     }
 
-    virtual Ptr<BackendNode> initVkCom(const std::vector<Ptr<BackendWrapper> > &input) CV_OVERRIDE
-    {
-#ifdef HAVE_VULKAN
-        CV_Assert(!_order.empty());
-        std::shared_ptr<vkcom::OpBase> op(new vkcom::OpPermute(_order));
-        return Ptr<BackendNode>(new VkComBackendNode(input, op));
-#endif // HAVE_VULKAN
-        return Ptr<BackendNode>();
-    }
-
 #ifdef HAVE_INF_ENGINE
     virtual Ptr<BackendNode> initInfEngine(const std::vector<Ptr<BackendWrapper> >&) CV_OVERRIDE
     {
         InferenceEngine::Builder::PermuteLayer ieLayer(name);
         ieLayer.setOrder(_order);
         return Ptr<BackendNode>(new InfEngineBackendNode(ieLayer));
+    }
+#endif  // HAVE_INF_ENGINE
+
+#ifdef HAVE_INF_ENGINE
+    virtual Ptr<BackendNode> initNgraph(const std::vector<Ptr<BackendWrapper> >& inputs,
+                                        const std::vector<Ptr<BackendNode> >& nodes) CV_OVERRIDE
+    {
+        auto& ieInpNode = nodes[0].dynamicCast<InfEngineNgraphNode>()->node;
+        auto tr_axes = std::make_shared<ngraph::op::Constant>(ngraph::element::i64,
+                       ngraph::Shape({_order.size()}), _order.data());
+        auto transpose = std::make_shared<ngraph::op::Transpose>(ieInpNode, tr_axes);
+        return Ptr<BackendNode>(new InfEngineNgraphNode(transpose));
     }
 #endif  // HAVE_INF_ENGINE
 

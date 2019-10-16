@@ -349,6 +349,11 @@ TEST_P(MaxPooling, Accuracy)
         applyTestTag(CV_TEST_TAG_DNN_SKIP_IE_MYRIAD_X, CV_TEST_TAG_DNN_SKIP_IE_2019R1, CV_TEST_TAG_DNN_SKIP_IE_2019R1_1);
 #endif
 
+#if defined(INF_ENGINE_RELEASE) && INF_ENGINE_VER_MAJOR_GE(2019010000)
+    if (backendId == DNN_BACKEND_NGRAPH)
+        applyTestTag(CV_TEST_TAG_DNN_SKIP_IE_2019R2);
+#endif
+
     LayerParams lp;
     lp.set("pool", "max");
     lp.set("kernel_w", kernel.width);
@@ -447,7 +452,7 @@ INSTANTIATE_TEST_CASE_P(Layer_Test_Halide, SoftMax, Combine(
 //////////////////////////////////////////////////////////////////////////////
 TEST_P(Test_Halide_layers, MaxPoolUnpool)
 {
-    if (backend == DNN_BACKEND_INFERENCE_ENGINE)
+    if (backend == DNN_BACKEND_INFERENCE_ENGINE || backend == DNN_BACKEND_NGRAPH)
         applyTestTag(CV_TEST_TAG_DNN_SKIP_IE);
 
     LayerParams pool;
@@ -554,9 +559,9 @@ TEST_P(ReLU, Accuracy)
     Backend backendId = get<0>(get<1>(GetParam()));
     Target targetId = get<1>(get<1>(GetParam()));
 
-#if defined(INF_ENGINE_RELEASE) && INF_ENGINE_VER_MAJOR_GE(2019020000)
+#if defined(INF_ENGINE_RELEASE) && INF_ENGINE_VER_MAJOR_EQ(2019020000)
     if (backendId == DNN_BACKEND_INFERENCE_ENGINE && targetId == DNN_TARGET_MYRIAD && negativeSlope < 0)
-        applyTestTag(CV_TEST_TAG_DNN_SKIP_IE_2019R3, CV_TEST_TAG_DNN_SKIP_IE_2019R2, CV_TEST_TAG_DNN_SKIP_IE);
+        applyTestTag(CV_TEST_TAG_DNN_SKIP_IE, CV_TEST_TAG_DNN_SKIP_IE_2019R2);
 #endif
 
     LayerParams lp;
@@ -754,14 +759,8 @@ TEST_P(Eltwise, Accuracy)
 #endif
 
 #if defined(INF_ENGINE_RELEASE) && INF_ENGINE_VER_MAJOR_GE(2019010000)
-    if (backendId == DNN_BACKEND_INFERENCE_ENGINE && numConv > 1)
+    if ((backendId == DNN_BACKEND_INFERENCE_ENGINE || backendId == DNN_BACKEND_NGRAPH) && numConv > 1)
         applyTestTag(CV_TEST_TAG_DNN_SKIP_IE, CV_TEST_TAG_DNN_SKIP_IE_2019R1, CV_TEST_TAG_DNN_SKIP_IE_2019R1_1);
-#endif
-
-#if defined(INF_ENGINE_RELEASE)
-    if (backendId == DNN_BACKEND_INFERENCE_ENGINE && targetId == DNN_TARGET_OPENCL &&
-        op == "sum" && numConv == 1 && !weighted)
-        applyTestTag(CV_TEST_TAG_DNN_SKIP_IE_OPENCL, CV_TEST_TAG_DNN_SKIP_IE);
 #endif
 
     Net net;

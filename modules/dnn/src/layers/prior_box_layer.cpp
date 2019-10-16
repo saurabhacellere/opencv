@@ -43,7 +43,10 @@
 #include "../precomp.hpp"
 #include "layers_common.hpp"
 #include "../op_inf_engine.hpp"
-#include "../op_vkcom.hpp"
+#include "../ie_ngraph.hpp"
+#include <ngraph/op/experimental/layers/prior_box.hpp>
+#include <ngraph/op/experimental/layers/prior_box_clustered.hpp>
+
 #include <float.h>
 #include <algorithm>
 #include <cmath>
@@ -273,10 +276,9 @@ public:
 
     virtual bool supportBackend(int backendId) CV_OVERRIDE
     {
-        return backendId == DNN_BACKEND_OPENCV ||
+        return backendId == DNN_BACKEND_OPENCV || (backendId == DNN_BACKEND_NGRAPH && (_explicitSizes || _stepX == _stepY)) ||
                (backendId == DNN_BACKEND_INFERENCE_ENGINE && haveInfEngine() &&
-                   ( _explicitSizes || (_minSize.size() == 1 && _maxSize.size() <= 1)))
-               || (backendId == DNN_BACKEND_VKCOM && haveVulkan());
+               ( _explicitSizes || (_minSize.size() == 1 && _maxSize.size() <= 1)));
     }
 
     bool getMemoryShapes(const std::vector<MatShape> &inputs,
@@ -485,19 +487,6 @@ public:
         }
     }
 
-    virtual Ptr<BackendNode> initVkCom(const std::vector<Ptr<BackendWrapper> > &input) CV_OVERRIDE
-    {
-#ifdef HAVE_VULKAN
-        std::shared_ptr<vkcom::OpBase> op(new vkcom::OpPriorBox(_stepX, _stepY,
-                                                                _clip, _numPriors,
-                                                                _variance, _offsetsX,
-                                                                _offsetsY, _boxWidths,
-                                                                _boxHeights));
-        return Ptr<BackendNode>(new VkComBackendNode(input, op));
-#endif // HAVE_VULKAN
-        return Ptr<BackendNode>();
-    }
-
 #ifdef HAVE_INF_ENGINE
     virtual Ptr<BackendNode> initInfEngine(const std::vector<Ptr<BackendWrapper> >&) CV_OVERRIDE
     {
@@ -559,6 +548,63 @@ public:
         }
     }
 #endif  // HAVE_INF_ENGINE
+
+#ifdef HAVE_INF_ENGINE
+    virtual Ptr<BackendNode> initNgraph(const std::vector<Ptr<BackendWrapper> >& inputs, const std::vector<Ptr<BackendNode> >& nodes) CV_OVERRIDE
+    {
+        CV_Assert(nodes.size() == 2);
+        auto layer = nodes[0].dynamicCast<InfEngineNgraphNode>()->node;
+        auto image = nodes[1].dynamicCast<InfEngineNgraphNode>()->node;
+        auto layer_shape = std::make_shared<ngraph::op::ShapeOf>(layer);
+        auto image_shape = std::make_shared<ngraph::op::ShapeOf>(image);
+
+        auto lower_bounds = std::make_shared<ngraph::op::Constant>(ngraph::element::i64, ngraph::Shape{1}, std::vector<int64_t>{2});
+        auto upper_bounds = std::make_shared<ngraph::op::Constant>(ngraph::element::i64, ngraph::Shape{1}, std::vector<int64_t>{4});
+        auto strides      = std::make_shared<ngraph::op::Constant>(ngraph::element::i64, ngraph::Shape{1}, std::vector<int64_t>{1});
+
+        auto slice_layer = std::make_shared<ngraph::op::DynSlice>(layer_shape, lower_bounds, upper_bounds, strides);
+        auto slice_image = std::make_shared<ngraph::op::DynSlice>(image_shape, lower_bounds, upper_bounds, strides);
+
+        if (_explicitSizes)
+        {
+            CV_Assert_N(!_boxWidths.empty(), !_boxHeights.empty(), !_variance.empty());
+            CV_Assert(_boxWidths.size() == _boxHeights.size());
+            ngraph::op::PriorBoxClusteredAttrs attrs;
+            attrs.widths = _boxWidths;
+            attrs.num_priors = _boxWidths.size();
+            attrs.heights = _boxHeights;
+            attrs.clip = _clip;
+            CV_CheckEQ(_offsetsX.size(), (size_t)1, ""); CV_CheckEQ(_offsetsY.size(), (size_t)1, ""); CV_CheckEQ(_offsetsX[0], _offsetsY[0], "");
+            attrs.offset = _offsetsX[0];
+            attrs.step_heights = _stepY;
+            attrs.step_widths = _stepX;
+            attrs.variances = _variance;
+
+            auto priorBox = std::make_shared<ngraph::op::PriorBoxClustered>(slice_layer, slice_image, attrs);
+            return Ptr<BackendNode>(new InfEngineNgraphNode(priorBox));
+        }
+        else
+        {
+            ngraph::op::PriorBoxAttrs attrs;
+            attrs.min_size = _minSize;
+            attrs.max_size = _maxSize;
+            // doesn't work with empty aspectRatio
+            attrs.aspect_ratio = !_aspectRatios.empty()? _aspectRatios : std::vector<float>{1.0f};
+            attrs.clip = _clip;
+            attrs.flip = false;
+            attrs.variance = _variance;
+            CV_CheckEQ(_offsetsX.size(), (size_t)1, ""); CV_CheckEQ(_offsetsY.size(), (size_t)1, ""); CV_CheckEQ(_offsetsX[0], _offsetsY[0], "");
+            attrs.offset = _offsetsX[0];
+
+            attrs.step = _stepX;
+            attrs.scale_all_sizes = !_aspectRatios.empty(); //true;
+
+            auto priorBox = std::make_shared<ngraph::op::PriorBox>(slice_layer, slice_image, attrs);
+            return Ptr<BackendNode>(new InfEngineNgraphNode(priorBox));
+        }
+    }
+#endif  // HAVE_INF_ENGINE
+
 
     virtual int64 getFLOPS(const std::vector<MatShape> &inputs,
                            const std::vector<MatShape> &outputs) const CV_OVERRIDE

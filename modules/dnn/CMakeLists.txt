@@ -16,15 +16,9 @@ ocv_option(OPENCV_DNN_OPENCL "Build with OpenCL support" HAVE_OPENCL AND NOT APP
 
 if(OPENCV_DNN_OPENCL AND HAVE_OPENCL)
   add_definitions(-DCV_OCL4DNN=1)
+else()
+  ocv_cmake_hook_append(INIT_MODULE_SOURCES_opencv_dnn "${CMAKE_CURRENT_LIST_DIR}/cmake/hooks/INIT_MODULE_SOURCES_opencv_dnn.cmake")
 endif()
-
-ocv_option(OPENCV_DNN_CUDA "Build with CUDA support" HAVE_CUDA AND HAVE_CUBLAS AND HAVE_CUDNN)
-
-if(OPENCV_DNN_CUDA AND HAVE_CUDA AND HAVE_CUBLAS AND HAVE_CUDNN)
-  add_definitions(-DCV_CUDA4DNN=1)
-endif()
-
-ocv_cmake_hook_append(INIT_MODULE_SOURCES_opencv_dnn "${CMAKE_CURRENT_LIST_DIR}/cmake/hooks/INIT_MODULE_SOURCES_opencv_dnn.cmake")
 
 if(MSVC)
   add_definitions( -D_CRT_SECURE_NO_WARNINGS=1 )
@@ -80,7 +74,9 @@ endif()
 
 set(include_dirs ${fw_inc})
 set(sources_options "")
-set(libs libprotobuf ${LAPACK_LIBRARIES})
+# set(libs libprotobuf ${LAPACK_LIBRARIES})
+file(GLOB ngraph_libs "/home/liubov/dldt/bin/intel64/Release/lib/libngraph.so")
+set(libs libprotobuf ${LAPACK_LIBRARIES} ${ngraph_libs})
 
 if(OPENCV_DNN_OPENCL AND HAVE_OPENCL)
   list(APPEND include_dirs ${OPENCL_INCLUDE_DIRS})
@@ -88,11 +84,9 @@ else()
   set(sources_options EXCLUDE_OPENCL)
 endif()
 
-if(OPENCV_DNN_CUDA AND HAVE_CUDA AND HAVE_CUBLAS AND HAVE_CUDNN)
-  list(APPEND include_dirs ${CUDA_TOOLKIT_INCLUDE} ${CUDNN_INCLUDE_DIRS})
-else()
-  set(sources_options ${sources_options} EXCLUDE_CUDA)
-endif()
+
+list(APPEND include_dirs "/home/liubov/dldt/ngraph/src/ngraph")
+list(APPEND include_dirs "/home/liubov/dldt/ngraph/src/")
 
 ocv_module_include_directories(${include_dirs})
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -103,7 +97,7 @@ endif()
 ocv_glob_module_sources(${sources_options} SOURCES ${fw_srcs})
 ocv_create_module(${libs} ${INF_ENGINE_TARGET})
 ocv_add_samples()
-ocv_add_accuracy_tests(${INF_ENGINE_TARGET})
+ocv_add_accuracy_tests(${INF_ENGINE_TARGET} ${ngraph_libs})
 
 set(perf_path "${CMAKE_CURRENT_LIST_DIR}/perf")
 file(GLOB_RECURSE perf_srcs "${perf_path}/*.cpp")

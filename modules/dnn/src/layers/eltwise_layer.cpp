@@ -44,6 +44,7 @@
 #include "layers_common.hpp"
 #include "../op_halide.hpp"
 #include "../op_inf_engine.hpp"
+#include "../ie_ngraph.hpp"
 
 #ifdef HAVE_OPENCL
 #include "opencl_kernels_dnn.hpp"
@@ -71,7 +72,7 @@ public:
         op = SUM;
         if (params.has("operation"))
         {
-            String operation = toLowerCase(params.get<String>("operation"));
+            String operation = params.get<String>("operation").toLowerCase();
             if (operation == "prod")
                 op = PROD;
             else if (operation == "sum")
@@ -98,7 +99,7 @@ public:
     {
         return backendId == DNN_BACKEND_OPENCV ||
                backendId == DNN_BACKEND_HALIDE ||
-               (backendId == DNN_BACKEND_INFERENCE_ENGINE &&
+               ((backendId == DNN_BACKEND_NGRAPH || backendId == DNN_BACKEND_INFERENCE_ENGINE) &&
                 (preferableTarget != DNN_TARGET_OPENCL || coeffs.empty()));
     }
 
@@ -441,6 +442,34 @@ public:
             l.getParameters()["coeff"] = coeffs;
 
         return Ptr<BackendNode>(new InfEngineBackendNode(l));
+    }
+#endif  // HAVE_INF_ENGINE
+
+#ifdef HAVE_INF_ENGINE
+    virtual Ptr<BackendNode> initNgraph(const std::vector<Ptr<BackendWrapper> >& inputs,
+                                        const std::vector<Ptr<BackendNode> >& nodes) CV_OVERRIDE
+    {
+        auto& curr_node = nodes[0].dynamicCast<InfEngineNgraphNode>()->node;
+        if (!coeffs.empty()) {
+            auto coeff = std::make_shared<ngraph::op::Constant>(ngraph::element::f32, ngraph::Shape{1}, &coeffs[0]);
+            curr_node = std::make_shared<ngraph::op::Multiply>(curr_node, coeff, ngraph::op::AutoBroadcastType::NUMPY);
+        }
+
+        for (size_t i = 1; i < nodes.size(); i++)
+        {
+            auto& next_node = nodes[i].dynamicCast<InfEngineNgraphNode>()->node;
+            if (!coeffs.empty()) {
+                auto coeff = std::make_shared<ngraph::op::Constant>(ngraph::element::f32, ngraph::Shape{1}, &coeffs[i]);
+                next_node = std::make_shared<ngraph::op::Multiply>(next_node, coeff, ngraph::op::AutoBroadcastType::NUMPY);
+            }
+            switch (op) {
+                case SUM:  curr_node = curr_node + next_node; break;
+                case PROD: curr_node = curr_node * next_node; break;
+                case MAX:  curr_node = std::make_shared<ngraph::op::Maximum>(curr_node, next_node); break;
+                default: CV_Error(Error::StsNotImplemented, "Unsupported eltwise operation");
+            }
+        }
+        return Ptr<BackendNode>(new InfEngineNgraphNode(curr_node));
     }
 #endif  // HAVE_INF_ENGINE
 

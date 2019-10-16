@@ -22,12 +22,12 @@ public class CascadeClassifierTest extends OpenCVTestCase {
 
     public void testCascadeClassifier() {
         cc = new CascadeClassifier();
-        assertNotNull(cc);
+        assertTrue(null != cc);
     }
 
     public void testCascadeClassifierString() {
         cc = new CascadeClassifier(OpenCVTestRunner.LBPCASCADE_FRONTALFACE_PATH);
-        assertNotNull(cc);
+        assertTrue(null != cc);
     }
 
     public void testDetectMultiScaleMatListOfRect() {
@@ -98,7 +98,7 @@ public class CascadeClassifierTest extends OpenCVTestCase {
     public void testLoad() {
         cc = new CascadeClassifier();
         cc.load(OpenCVTestRunner.LBPCASCADE_FRONTALFACE_PATH);
-        assertFalse(cc.empty());
+        assertTrue(!cc.empty());
     }
 
 }

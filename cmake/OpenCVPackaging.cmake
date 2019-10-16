@@ -99,14 +99,9 @@ if(HAVE_CUDA)
       set(CPACK_DEB_libs_PACKAGE_DEPENDS "${CPACK_DEB_libs_PACKAGE_DEPENDS}, cuda-cufft-${cuda_version_suffix}")
       set(CPACK_DEB_dev_PACKAGE_DEPENDS "${CPACK_DEB_dev_PACKAGE_DEPENDS}, cuda-cufft-dev-${cuda_version_suffix}")
     endif()
-    if(HAVE_CUBLAS)
+    if(HAVE_HAVE_CUBLAS)
       set(CPACK_DEB_libs_PACKAGE_DEPENDS "${CPACK_DEB_libs_PACKAGE_DEPENDS}, cuda-cublas-${cuda_version_suffix}")
       set(CPACK_DEB_dev_PACKAGE_DEPENDS "${CPACK_DEB_dev_PACKAGE_DEPENDS}, cuda-cublas-dev-${cuda_version_suffix}")
-    endif()
-    if(HAVE_CUDNN)
-      # TODO
-      #ex: libcudnn7_7.5.1.10-1+cuda10.1_amd64
-      #ex: libcudnn7-dev_7.5.1.10-1+cuda10.1_amd64
     endif()
   endif()
   set(CPACK_COMPONENT_dev_DEPENDS libs)

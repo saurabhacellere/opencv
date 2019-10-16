@@ -16,8 +16,7 @@ function(ocv_cmake_dump_vars)
     string(TOLOWER "${__variableName}" __variableName_lower)
     if((__variableName MATCHES "${regex}" OR __variableName_lower MATCHES "${regex_lower}")
         AND NOT __variableName_lower MATCHES "^__")
-      get_property(__value VARIABLE PROPERTY "${__variableName}")
-      set(__VARS "${__VARS}${__variableName}=${__value}\n")
+      set(__VARS "${__VARS}${__variableName}=${${__variableName}}\n")
     endif()
   endforeach()
   if(DUMP_TOFILE)
@@ -415,34 +414,12 @@ MACRO(ocv_check_compiler_flag LANG FLAG RESULT)
       else()
         set(__msg "")
       endif()
-      if(CMAKE_REQUIRED_LIBRARIES)
-        set(__link_libs LINK_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
-      else()
-        set(__link_libs)
-      endif()
-      set(__cmake_flags "")
-      if(CMAKE_EXE_LINKER_FLAGS)  # CMP0056 do this on new CMake
-        list(APPEND __cmake_flags "-DCMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}")
-      endif()
-
-      # CMP0067 do this on new CMake
-      if(DEFINED CMAKE_CXX_STANDARD)
-        list(APPEND __cmake_flags "-DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}")
-      endif()
-      if(DEFINED CMAKE_CXX_STANDARD_REQUIRED)
-        list(APPEND __cmake_flags "-DCMAKE_CXX_STANDARD_REQUIRED=${CMAKE_CXX_STANDARD_REQUIRED}")
-      endif()
-      if(DEFINED CMAKE_CXX_EXTENSIONS)
-        list(APPEND __cmake_flags "-DCMAKE_CXX_EXTENSIONS=${CMAKE_CXX_EXTENSIONS}")
-      endif()
-
       MESSAGE(STATUS "Performing Test ${RESULT}${__msg}")
       TRY_COMPILE(${RESULT}
         "${CMAKE_BINARY_DIR}"
         "${_fname}"
-        CMAKE_FLAGS ${__cmake_flags}
+        CMAKE_FLAGS "-DCMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}"   # CMP0056 do this on new CMake
         COMPILE_DEFINITIONS "${FLAG}"
-        ${__link_libs}
         OUTPUT_VARIABLE OUTPUT)
 
       if(${RESULT})
@@ -766,7 +743,7 @@ macro(ocv_check_modules define)
     endif()
     unset(${define}_${__modname}_FOUND)
   endforeach()
-  if(PKG_CONFIG_FOUND OR PkgConfig_FOUND)
+  if(COMMAND pkg_check_modules)
     pkg_check_modules(${define} ${ARGN})
   endif()
   if(${define}_FOUND)
@@ -804,7 +781,7 @@ macro(ocv_check_modules define)
           if(pkgcfg_lib_${define}_${_lib})
             list(APPEND _libs "${pkgcfg_lib_${define}_${_lib}}")
           else()
-            message(WARNING "ocv_check_modules(${define}): can't find library '${_lib}'. Specify 'pkgcfg_lib_${define}_${_lib}' manually")
+            message(WARNING "ocv_check_modules(${define}): can't find library '${_lib}'. Specify 'pkgcfg_lib_${define}_${_lib}' manualy")
             list(APPEND _libs "${_lib}")
           endif()
         else()

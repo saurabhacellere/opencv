@@ -56,6 +56,9 @@ static void calcMinEigenVal( const Mat& _cov, Mat& _dst )
 #if CV_TRY_AVX
     bool haveAvx = CV_CPU_HAS_SUPPORT_AVX;
 #endif
+#if CV_SIMD128
+    bool haveSimd = hasSIMD128();
+#endif
 
     if( _cov.isContinuous() && _dst.isContinuous() )
     {
@@ -75,6 +78,7 @@ static void calcMinEigenVal( const Mat& _cov, Mat& _dst )
             j = 0;
 
 #if CV_SIMD128
+        if( haveSimd )
         {
             v_float32x4 half = v_setall_f32(0.5f);
             for( ; j <= size.width - v_float32x4::nlanes; j += v_float32x4::nlanes )
@@ -108,6 +112,9 @@ static void calcHarris( const Mat& _cov, Mat& _dst, double k )
 #if CV_TRY_AVX
     bool haveAvx = CV_CPU_HAS_SUPPORT_AVX;
 #endif
+#if CV_SIMD128
+    bool haveSimd = hasSIMD128();
+#endif
 
     if( _cov.isContinuous() && _dst.isContinuous() )
     {
@@ -128,6 +135,7 @@ static void calcHarris( const Mat& _cov, Mat& _dst, double k )
             j = 0;
 
 #if CV_SIMD128
+        if( haveSimd )
         {
             v_float32x4 v_k = v_setall_f32((float)k);
 
@@ -242,6 +250,9 @@ cornerEigenValsVecs( const Mat& src, Mat& eigenv, int block_size,
 #if CV_TRY_AVX
     bool haveAvx = CV_CPU_HAS_SUPPORT_AVX;
 #endif
+#if CV_SIMD128
+    bool haveSimd = hasSIMD128();
+#endif
 
     int depth = src.depth();
     double scale = (double)(1 << ((aperture_size > 0 ? aperture_size : 3) - 1)) * block_size;
@@ -283,6 +294,7 @@ cornerEigenValsVecs( const Mat& src, Mat& eigenv, int block_size,
             j = 0;
 
 #if CV_SIMD128
+        if( haveSimd )
         {
             for( ; j <= size.width - v_float32x4::nlanes; j += v_float32x4::nlanes )
             {
@@ -695,6 +707,7 @@ void cv::preCornerDetect( InputArray _src, OutputArray _dst, int ksize, int bord
     factor = 1./(factor * factor * factor);
 #if CV_SIMD128
     float factor_f = (float)factor;
+    bool haveSimd = hasSIMD128();
     v_float32x4 v_factor = v_setall_f32(factor_f), v_m2 = v_setall_f32(-2.0f);
 #endif
 
@@ -712,6 +725,7 @@ void cv::preCornerDetect( InputArray _src, OutputArray _dst, int ksize, int bord
         j = 0;
 
 #if CV_SIMD128
+        if (haveSimd)
         {
             for( ; j <= size.width - v_float32x4::nlanes; j += v_float32x4::nlanes )
             {

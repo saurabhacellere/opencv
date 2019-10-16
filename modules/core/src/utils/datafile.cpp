@@ -108,27 +108,20 @@ static cv::String getModuleLocation(const void* addr)
     CV_UNUSED(addr);
 #ifdef _WIN32
     HMODULE m = 0;
-#if _WIN32_WINNT >= 0x0501 && (!defined(WINAPI_FAMILY) || (WINAPI_FAMILY == WINAPI_FAMILY_DESKTOP_APP))
+#if _WIN32_WINNT >= 0x0501
     ::GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
         reinterpret_cast<LPCTSTR>(addr),
         &m);
 #endif
     if (m)
     {
-        TCHAR path[MAX_PATH];
-        const size_t path_size = sizeof(path) / sizeof(*path);
-        size_t sz = GetModuleFileName(m, path, path_size);
+        char path[MAX_PATH];
+        const size_t path_size = sizeof(path)/sizeof(*path);
+        size_t sz = GetModuleFileNameA(m, path, path_size); // no unicode support
         if (sz > 0 && sz < path_size)
         {
-            path[sz] = TCHAR('\0');
-#ifdef _UNICODE
-            char char_path[MAX_PATH];
-            size_t copied = wcstombs(char_path, path, MAX_PATH);
-            CV_Assert((copied != MAX_PATH) && (copied != (size_t)-1));
-            return cv::String(char_path);
-#else
+            path[sz] = '\0';
             return cv::String(path);
-#endif
         }
     }
 #elif defined(__linux__)
@@ -151,37 +144,10 @@ static cv::String getModuleLocation(const void* addr)
     return cv::String();
 }
 
-bool getBinLocation(std::string& dst)
+std::string getBinLocation()
 {
-    dst = getModuleLocation((void*)getModuleLocation); // using code address, doesn't work with static linkage!
-    return !dst.empty();
+    return getModuleLocation((void*)getModuleLocation); // use code addr, doesn't work with static linkage!
 }
-
-#ifdef _WIN32
-bool getBinLocation(std::wstring& dst)
-{
-    void* addr = (void*)getModuleLocation; // using code address, doesn't work with static linkage!
-    HMODULE m = 0;
-#if _WIN32_WINNT >= 0x0501 && (!defined(WINAPI_FAMILY) || (WINAPI_FAMILY == WINAPI_FAMILY_DESKTOP_APP))
-    ::GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-        reinterpret_cast<LPCTSTR>(addr),
-        &m);
-#endif
-    if (m)
-    {
-        wchar_t path[4096];
-        const size_t path_size = sizeof(path)/sizeof(*path);
-        size_t sz = GetModuleFileNameW(m, path, path_size);
-        if (sz > 0 && sz < path_size)
-        {
-            path[sz] = '\0';
-            dst.assign(path, sz);
-            return true;
-        }
-    }
-    return false;
-}
-#endif
 
 cv::String findDataFile(const cv::String& relative_path,
                         const char* configuration_parameter,
@@ -326,15 +292,8 @@ cv::String findDataFile(const cv::String& relative_path,
         }
     }
 
-    cv::String module_path;
-    if (getBinLocation(module_path))
-    {
-        CV_LOG_DEBUG(NULL, "Detected module path: '" << module_path << '\'');
-    }
-    else
-    {
-        CV_LOG_INFO(NULL, "Can't detect module binaries location");
-    }
+    cv::String module_path = getBinLocation();
+    CV_LOG_DEBUG(NULL, "Detected module path: '" << module_path << '\'');
 
     if (!has_tested_build_directory &&
         (isSubDirectory(build_dir, module_path) || isSubDirectory(utils::fs::canonical(build_dir), utils::fs::canonical(module_path)))

@@ -19,6 +19,8 @@ if(DOXYGEN_FOUND)
   unset(CMAKE_DOXYGEN_TUTORIAL_CONTRIB_ROOT)
   unset(CMAKE_DOXYGEN_TUTORIAL_JS_ROOT)
 
+  set(OPENCV_MATHJAX_RELPATH "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0" CACHE STRING "URI to a MathJax installation")
+
   set(OPENCV_DOCS_EXCLUDE_CUDA ON)
   if(";${OPENCV_MODULES_EXTRA};" MATCHES ";cudev;")
     set(OPENCV_DOCS_EXCLUDE_CUDA OFF)
@@ -147,7 +149,7 @@ if(DOXYGEN_FOUND)
 
   # set export variables
   string(REPLACE ";" " \\\n" CMAKE_DOXYGEN_INPUT_LIST "${rootfile} ; ${faqfile} ; ${paths_include} ; ${paths_hal_interface} ; ${paths_doc} ; ${tutorial_path} ; ${tutorial_py_path} ; ${tutorial_js_path} ; ${paths_tutorial} ; ${tutorial_contrib_root}")
-  string(REPLACE ";" " \\\n" CMAKE_DOXYGEN_IMAGE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/images ; ${paths_doc} ; ${tutorial_path} ; ${tutorial_py_path} ; ${tutorial_js_path} ; ${paths_tutorial}")
+  string(REPLACE ";" " \\\n" CMAKE_DOXYGEN_IMAGE_PATH "${paths_doc} ; ${tutorial_path} ; ${tutorial_py_path} ; ${tutorial_js_path} ; ${paths_tutorial}")
   string(REPLACE ";" " \\\n" CMAKE_DOXYGEN_EXCLUDE_LIST "${CMAKE_DOXYGEN_EXCLUDE_LIST}")
   string(REPLACE ";" " " CMAKE_DOXYGEN_ENABLED_SECTIONS "${CMAKE_DOXYGEN_ENABLED_SECTIONS}")
   # TODO: remove paths_doc from EXAMPLE_PATH after face module tutorials/samples moved to separate folders

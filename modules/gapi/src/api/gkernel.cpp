@@ -2,7 +2,7 @@
 // It is subject to the license terms in the LICENSE file found in the top-level directory
 // of this distribution and at http://opencv.org/license.html.
 //
-// Copyright (C) 2018-2019 Intel Corporation
+// Copyright (C) 2018 Intel Corporation
 
 
 #include "precomp.hpp"
@@ -13,88 +13,135 @@
 #include <ade/util/algorithm.hpp>
 
 #include "logger.hpp"
-#include <opencv2/gapi/gkernel.hpp>
+#include "opencv2/gapi/gkernel.hpp"
 
 #include "api/gbackend_priv.hpp"
 
 // GKernelPackage public implementation ////////////////////////////////////////
 void cv::gapi::GKernelPackage::remove(const cv::gapi::GBackend& backend)
 {
-    std::vector<std::string> id_deleted_kernels;
-    for (const auto& p : m_id_kernels)
-    {
-        if (p.second.first == backend)
-        {
-            id_deleted_kernels.push_back(p.first);
-        }
-    }
-
-    for (const auto& kernel_id : id_deleted_kernels)
-    {
-        m_id_kernels.erase(kernel_id);
-    }
+    m_backend_kernels.erase(backend);
 }
 
 bool cv::gapi::GKernelPackage::includesAPI(const std::string &id) const
 {
-    return ade::util::contains(m_id_kernels, id);
+    // In current form not very efficient (n * log n)
+    auto it = std::find_if(m_backend_kernels.begin(),
+                           m_backend_kernels.end(),
+                           [&id](const M::value_type &p) {
+                               return ade::util::contains(p.second, id);
+                           });
+    return (it != m_backend_kernels.end());
 }
 
 void cv::gapi::GKernelPackage::removeAPI(const std::string &id)
 {
-    m_id_kernels.erase(id);
+    for (auto &bk : m_backend_kernels)
+        bk.second.erase(id);
 }
 
 std::size_t cv::gapi::GKernelPackage::size() const
 {
-    return m_id_kernels.size();
-}
-
-const std::vector<cv::GTransform> &cv::gapi::GKernelPackage::get_transformations() const
-{
-    return m_transformations;
+    return std::accumulate(m_backend_kernels.begin(),
+                           m_backend_kernels.end(),
+                           static_cast<std::size_t>(0u),
+                           [](std::size_t acc, const M::value_type& v) {
+                               return acc + v.second.size();
+                           });
 }
 
 cv::gapi::GKernelPackage cv::gapi::combine(const GKernelPackage  &lhs,
-                                           const GKernelPackage  &rhs)
+                                           const GKernelPackage  &rhs,
+                                           const cv::unite_policy policy)
 {
 
-        // If there is a collision, prefer RHS to LHS
+    if (policy == cv::unite_policy::REPLACE)
+    {
+        // REPLACE policy: if there is a collision, prefer RHS
+        // to LHS
         // since RHS package has a precedense, start with its copy
         GKernelPackage result(rhs);
         // now iterate over LHS package and put kernel if and only
         // if there's no such one
-        for (const auto& kernel : lhs.m_id_kernels)
+        for (const auto &backend : lhs.m_backend_kernels)
         {
-            if (!result.includesAPI(kernel.first))
+            for (const auto &kimpl : backend.second)
             {
-                result.m_id_kernels.emplace(kernel.first, kernel.second);
+                if (!result.includesAPI(kimpl.first))
+                    result.m_backend_kernels[backend.first].insert(kimpl);
             }
         }
-        for (const auto &transforms : lhs.m_transformations){
-            result.m_transformations.push_back(transforms);
+        return result;
+    }
+    else if (policy == cv::unite_policy::KEEP)
+    {
+        // KEEP policy: if there is a collision, just keep two versions
+        // of a kernel
+        GKernelPackage result(lhs);
+        for (const auto &p : rhs.m_backend_kernels)
+        {
+            result.m_backend_kernels[p.first].insert(p.second.begin(),
+                                                     p.second.end());
         }
         return result;
+    }
+    else GAPI_Assert(false);
+    return GKernelPackage();
 }
 
 std::pair<cv::gapi::GBackend, cv::GKernelImpl>
-cv::gapi::GKernelPackage::lookup(const std::string &id) const
+cv::gapi::GKernelPackage::lookup(const std::string &id,
+                                 const GLookupOrder &order) const
 {
-    auto kernel_it = m_id_kernels.find(id);
-    if (kernel_it != m_id_kernels.end())
+    if (order.empty())
     {
-        return kernel_it->second;
+        // If order is empty, return what comes first
+        auto it = std::find_if(m_backend_kernels.begin(),
+                               m_backend_kernels.end(),
+                               [&id](const M::value_type &p) {
+                                   return ade::util::contains(p.second, id);
+                               });
+        if (it != m_backend_kernels.end())
+        {
+            // FIXME: Two lookups!
+            return std::make_pair(it->first, it->second.find(id)->second);
+        }
     }
-    // If reached here, kernel was not found.
+    else
+    {
+        // There is order, so:
+        // 1. Limit search scope only to specified backends
+        //    FIXME: Currently it is not configurable if search can fall-back
+        //    to other backends (not listed in order) if kernel hasn't been found
+        //    in the look-up list
+        // 2. Query backends in the specified order
+        for (const auto &selected_backend : order)
+        {
+            const auto kernels_it = m_backend_kernels.find(selected_backend);
+            if (kernels_it == m_backend_kernels.end())
+            {
+                GAPI_LOG_WARNING(NULL,
+                                 "Backend "
+                                  << &selected_backend.priv() // FIXME: name instead
+                                  << " was listed in lookup list but was not found "
+                                     "in the package");
+                continue;
+            }
+            if (ade::util::contains(kernels_it->second, id))
+            {
+                // FIXME: two lookups!
+                return std::make_pair(selected_backend, kernels_it->second.find(id)->second);
+            }
+        }
+    }
+
+    // If reached here, kernel was not found among selected backends.
     util::throw_error(std::logic_error("Kernel " + id + " was not found"));
 }
 
 std::vector<cv::gapi::GBackend> cv::gapi::GKernelPackage::backends() const
 {
-    using kernel_type = std::pair<std::string, std::pair<cv::gapi::GBackend, cv::GKernelImpl>>;
-    std::unordered_set<cv::gapi::GBackend> unique_set;
-    ade::util::transform(m_id_kernels, std::inserter(unique_set, unique_set.end()),
-                                       [](const kernel_type& k) { return k.second.first; });
-
-    return std::vector<cv::gapi::GBackend>(unique_set.begin(), unique_set.end());
+    std::vector<cv::gapi::GBackend> result;
+    for (const auto &p : m_backend_kernels) result.emplace_back(p.first);
+    return result;
 }
